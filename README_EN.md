@@ -4,6 +4,16 @@
   Next-generation Cloud Native Gateway
 </h1>
 
+[![Build Status](https://github.com/alibaba/higress/workflows/build%20and%20codecov/badge.svg?branch=main)](https://github.com/alibaba/higress/actions)
+[![license](https://img.shields.io/github/license/alibaba/higress.svg)](https://www.apache.org/licenses/LICENSE-2.0.html)
+
+[**Official Site**](https://higress.io/en-us/) &nbsp; |
+&nbsp; [**Docs**](https://higress.io/en-us/docs/overview/what-is-higress) &nbsp; |
+&nbsp; [**Blog**](https://higress.io/en-us/blog) &nbsp; |
+&nbsp; [**Developer**](https://higress.io/en-us/docs/developers/developers_dev) &nbsp; |
+&nbsp; [**Higress in Cloud**](https://www.alibabacloud.com/product/microservices-engine?spm=higress-website.topbar.0.0.0) &nbsp;
+
+
 <p>
    English | <a href="README.md">中文<a/>
 </p>
@@ -13,7 +23,7 @@ Higress is a next-generation cloud-native gateway based on Alibaba's internal ga
 Powered by [Istio](https://github.com/istio/istio) and [Envoy](https://github.com/envoyproxy/envoy), Higress realizes the integration of the triple gateway architecture of traffic gateway, microservice gateway and security gateway, thereby greatly reducing the costs of deployment, operation and maintenance.
 
 <h1 align="center">
-  <img src="https://img.alicdn.com/imgextra/i1/O1CN01vnNawh26mU5C9py9w_!!6000000007704-0-tps-1726-1366.jpg" alt="Higress Architecture">
+  <img src="https://img.alicdn.com/imgextra/i1/O1CN01iO9ph825juHbOIg75_!!6000000007563-2-tps-2483-2024.png" alt="Higress Architecture">
 </h1>
 
 

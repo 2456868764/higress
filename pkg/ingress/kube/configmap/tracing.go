@@ -316,9 +316,13 @@ func (t *TracingController) constructTracingTracer(tracing *Tracing, namespace s
 				"typed_config": {
 					"@type": "type.googleapis.com/envoy.config.trace.v3.SkyWalkingConfig",
 					"client_config": {
-						"service_name": "higress-gateway.%s",
-                        "backend_token": "%s"
-					},
+						"service_name": "higress-gateway.%s"`, namespace)
+		if len(skywalking.AccessToken) > 0 {
+			tracingConfig = tracingConfig + fmt.Sprintf(`,
+                        "backend_token": "%s"`, skywalking.AccessToken)
+		}
+		tracingConfig = tracingConfig + fmt.Sprintf(`
+			        },
 					"grpc_service": {
 						"envoy_grpc": {
 							"cluster_name": "outbound|%s||%s"
@@ -332,7 +336,7 @@ func (t *TracingController) constructTracingTracer(tracing *Tracing, namespace s
 			}
 		}
 	}
-}`, namespace, skywalking.AccessToken, skywalking.Port, skywalking.Service, timeout, tracing.Sampling)
+}`, skywalking.Port, skywalking.Service, timeout, tracing.Sampling)
 	}
 
 	if tracing.Zipkin != nil {

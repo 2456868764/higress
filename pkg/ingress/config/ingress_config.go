@@ -246,6 +246,7 @@ func (m *IngressConfig) List(typ config.GroupVersionKind, namespace string) ([]c
 	}
 
 	if typ == gvk.EnvoyFilter {
+		IngressLog.Infof("List EnvoyFilters")
 		m.mutex.RLock()
 		defer m.mutex.RUnlock()
 		var envoyFilters []config.Config
@@ -255,6 +256,7 @@ func (m *IngressConfig) List(typ config.GroupVersionKind, namespace string) ([]c
 			IngressLog.Errorf("Construct configmap EnvoyFilters error %v", err)
 		} else {
 			for _, envoyFilter := range configmapEnvoyFilters {
+				IngressLog.Infof("envoyfilter name:%s, data:%v", envoyFilter.Name, envoyFilter)
 				envoyFilters = append(envoyFilters, *envoyFilter)
 			}
 			IngressLog.Infof("Append %d configmap EnvoyFilters", len(configmapEnvoyFilters))
@@ -264,7 +266,7 @@ func (m *IngressConfig) List(typ config.GroupVersionKind, namespace string) ([]c
 			return m.cachedEnvoyFilters, nil
 		}
 		envoyFilters = append(envoyFilters, m.cachedEnvoyFilters...)
-		IngressLog.Infof("resource type %s, configs number %d", typ, len(envoyFilters))
+		IngressLog.Infof("merge resource type %s, configs number %d", typ, len(envoyFilters))
 		return envoyFilters, nil
 	}
 

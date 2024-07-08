@@ -87,21 +87,23 @@ func (c *Config) GetSecretNameByDomain(issuerName IssuerName, domain string) str
 }
 
 func (c *Config) Validate() error {
-	// check acmeIssuer
-	if len(c.ACMEIssuer) == 0 {
-		return fmt.Errorf("acmeIssuer is empty")
-	}
-	for _, issuer := range c.ACMEIssuer {
-		switch issuer.Name {
-		case IssuerTypeLetsencrypt:
-			if issuer.Email == "" {
-				return fmt.Errorf("acmeIssuer %s email is empty", issuer.Name)
+	// check acmeIssuer when AutomaticHttps enable
+	if c.AutomaticHttps {
+		if len(c.ACMEIssuer) == 0 {
+			return fmt.Errorf("acmeIssuer is empty")
+		}
+		for _, issuer := range c.ACMEIssuer {
+			switch issuer.Name {
+			case IssuerTypeLetsencrypt:
+				if issuer.Email == "" {
+					return fmt.Errorf("acmeIssuer %s email is empty", issuer.Name)
+				}
+				if !ValidateEmail(issuer.Email) {
+					return fmt.Errorf("acmeIssuer %s email %s is invalid", issuer.Name, issuer.Email)
+				}
+			default:
+				return fmt.Errorf("acmeIssuer name %s is not supported", issuer.Name)
 			}
-			if !ValidateEmail(issuer.Email) {
-				return fmt.Errorf("acmeIssuer %s email %s is invalid", issuer.Name, issuer.Email)
-			}
-		default:
-			return fmt.Errorf("acmeIssuer name %s is not supported", issuer.Name)
 		}
 	}
 	// check credentialConfig

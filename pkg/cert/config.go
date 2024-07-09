@@ -280,6 +280,7 @@ func NewConfigMgr(namespace string, client kubernetes.Interface) (*ConfigMgr, er
 	configMgr := &ConfigMgr{
 		client:    client,
 		namespace: namespace,
+		config:    atomic.Value{},
 	}
 	return configMgr, nil
 }

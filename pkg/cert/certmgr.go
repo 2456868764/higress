@@ -44,7 +44,7 @@ type CertMgr struct {
 	XDSUpdater    model.XDSUpdater
 }
 
-func InitCertMgr(opts *Option, clientSet kubernetes.Interface, config *Config, XDSUpdater model.XDSUpdater) (*CertMgr, error) {
+func InitCertMgr(opts *Option, clientSet kubernetes.Interface, config *Config, configMgr *ConfigMgr, XDSUpdater model.XDSUpdater) (*CertMgr, error) {
 	CertLog.Infof("certmgr init config: %+v", config)
 	// Init certmagic config
 	// First make a pointer to a Cache as we need to reference the same Cache in
@@ -87,8 +87,6 @@ func InitCertMgr(opts *Option, clientSet kubernetes.Interface, config *Config, X
 	myACME.Http01Solver = ingressSolver
 	// init issuers
 	cfg.Issuers = []certmagic.Issuer{myACME}
-
-	configMgr, _ := NewConfigMgr(opts.Namespace, clientSet)
 	secretMgr, _ := NewSecretMgr(opts.Namespace, clientSet)
 
 	certMgr := &CertMgr{
@@ -170,7 +168,8 @@ func (s *CertMgr) Reconcile(ctx context.Context, oldConfig *Config, newConfig *C
 		if oldConfig.FallbackForInvalidSecret != newConfig.FallbackForInvalidSecret || !reflect.DeepEqual(oldConfig.CredentialConfig, newConfig.CredentialConfig) {
 			CertLog.Infof("ingress need to full push")
 			s.XDSUpdater.ConfigUpdate(&model.PushRequest{
-				Full: true,
+				Full:   true,
+				Reason: []model.TriggerReason{"higress-https-Update"},
 			})
 		}
 	}

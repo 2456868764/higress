@@ -68,7 +68,7 @@ func (s *Server) InitServer() error {
 		return err
 	}
 	// init certmgr
-	certMgr, err := InitCertMgr(s.opts, s.clientSet, defaultConfig, s.XDSUpdater) // config and start
+	certMgr, err := InitCertMgr(s.opts, s.clientSet, defaultConfig, configMgr, s.XDSUpdater) // config and start
 	s.certMgr = certMgr
 	// init controller
 	controller, err := NewController(s.clientSet, s.opts.Namespace, certMgr, configMgr)

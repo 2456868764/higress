@@ -47,7 +47,7 @@ static_resources:
                             "@type": "type.googleapis.com/google.protobuf.StringValue"
                             value: |-
                               {
-                                "redis": {"serviceName":"redis-server.dns","password":"redis"},
+                                "redis": {"serviceName":"redis.dns","password":"redis"},
                                 "dashScope": {"serviceName":"dashscope.dns", "apiKey":"sk-602ac106f86640498444914e00cb0956", "contentKeyLen":1, "host":"dashscope.aliyuncs.com"},
                                 "dashVector": {"serviceName":"dashvector.dns", "apiKey":"sk-AjiyUN4bLEr1DvkpWvi9nD0UFodgO298C33BC546C11EF83429E3A4EE25FE6", "collection":"v1-embedding", "similarScoreThreshold":0.7, "host":"vrs-cn-jmp3uszhe00010.dashvector.cn-hangzhou.aliyuncs.com"}
                               }
@@ -69,14 +69,14 @@ static_resources:
                       address: echo-server
                       port_value: 3000
 
-    - name: outbound|6379||redis-server.dns
+    - name: outbound|6379||redis.dns
       connect_timeout: 30s
       type: LOGICAL_DNS
       # Comment out the following line to test on v6 networks
       dns_lookup_family: V4_ONLY
       lb_policy: ROUND_ROBIN
       load_assignment:
-        cluster_name: outbound|6379||redis-server.dns
+        cluster_name: outbound|6379||redis.dns
         endpoints:
           - lb_endpoints:
               - endpoint:

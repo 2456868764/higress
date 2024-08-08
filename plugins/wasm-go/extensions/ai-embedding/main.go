@@ -184,6 +184,7 @@ func parseConfig(json gjson.Result, c *PluginConfig, log wrapper.Log) error {
 	})
 
 	log.Infof("parseConfig() result:%+v", c)
+	return nil
 	return c.redisClient.Init(c.RedisInfo.Username, c.RedisInfo.Password, int64(c.RedisInfo.Timeout))
 }
 

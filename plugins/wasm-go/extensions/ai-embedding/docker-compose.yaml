@@ -7,6 +7,7 @@ services:
     command: -c /etc/envoy/envoy.yaml --log-level info --log-path /etc/envoy/envoy.log --component-log-level wasm:debug
     depends_on:
       - echo-server
+      - redis-server
     networks:
       - wasmtest
     ports:
@@ -29,8 +30,6 @@ services:
       - REDIS_PASSWORD=redis
     networks:
       - wasmtest
-    volumes:
-      - ./data/redis:/bitnami/redis  # 持久化Redis数据
     ports:
       - "6379:6379"  # 将容器的6379端口映射到宿主机的6379端口
     restart: always  # 容器退出时总是重启

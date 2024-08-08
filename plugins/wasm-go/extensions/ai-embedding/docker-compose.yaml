@@ -1,0 +1,45 @@
+version: '3.9'
+services:
+  envoy:
+    image: higress-registry.cn-hangzhou.cr.aliyuncs.com/higress/gateway:v1.4.1
+    entrypoint: /usr/local/bin/envoy
+    # 注意这里对wasm开启了debug级别日志，正式部署时则默认info级别
+    command: -c /etc/envoy/envoy.yaml --log-level info --log-path /etc/envoy/envoy.log --component-log-level wasm:debug
+    depends_on:
+      - echo-server
+    networks:
+      - wasmtest
+    ports:
+      - "10000:10000"
+      - "9901:9901"
+    volumes:
+      - ./envoy.yaml:/etc/envoy/envoy.yaml
+      - ./build/plugin.wasm:/etc/envoy/plugin.wasm
+      - ./envoy.log:/etc/envoy/envoy.log
+  echo-server:
+    image: higress-registry.cn-hangzhou.cr.aliyuncs.com/higress/echo-server:1.3.0
+    networks:
+      - wasmtest
+    ports:
+      - "3000:3000"
+  redis-server:
+    image: registry.cn-hangzhou.aliyuncs.com/2456868764/redis:latest  # 使用最新版本的Redis镜像
+    environment:
+      - ALLOW_EMPTY_PASSWORD=no
+      - REDIS_PASSWORD=redis
+    networks:
+      - wasmtest
+    volumes:
+      - ./data/redis:/bitnami/redis  # 持久化Redis数据
+    ports:
+      - "6379:6379"  # 将容器的6379端口映射到宿主机的6379端口
+    restart: always  # 容器退出时总是重启
+  token-server:
+    image: registry.cn-hangzhou.aliyuncs.com/2456868764/token-server:1.0.0
+    networks:
+      - wasmtest
+    ports:
+      - "9090:9090"
+    restart: always  # 容器退出时总是重启
+networks:
+  wasmtest: {}

@@ -1,0 +1,125 @@
+admin:
+  address:
+    socket_address:
+      protocol: TCP
+      address: 0.0.0.0
+      port_value: 9901
+static_resources:
+  listeners:
+    - name: listener_0
+      address:
+        socket_address:
+          protocol: TCP
+          address: 0.0.0.0
+          port_value: 10000
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                scheme_header_transformation:
+                  scheme_to_overwrite: https
+                stat_prefix: ingress_http
+                route_config:
+                  name: local_route
+                  virtual_hosts:
+                    - name: local_service
+                      domains: ["*"]
+                      routes:
+                        - match:
+                            prefix: "/"
+                          route:
+                            cluster: echo-server
+                http_filters:
+                  - name: wasmdemo
+                    typed_config:
+                      "@type": type.googleapis.com/udpa.type.v1.TypedStruct
+                      type_url: type.googleapis.com/envoy.extensions.filters.http.wasm.v3.Wasm
+                      value:
+                        config:
+                          name: wasmdemo
+                          vm_config:
+                            runtime: envoy.wasm.runtime.v8
+                            code:
+                              local:
+                                filename: /etc/envoy/plugin.wasm
+                          configuration:
+                            "@type": "type.googleapis.com/google.protobuf.StringValue"
+                            value: |-
+                              {
+                                "redis": {"serviceName":"redis-server.dns","password":"redis"},
+                                "dashScope": {"serviceName":"dashscope.dns", "apiKey":"sk-602ac106f86640498444914e00cb0956", "contentKeyLen":1, "host":"dashscope.aliyuncs.com"},
+                                "dashVector": {"serviceName":"dashvector.dns", "apiKey":"sk-AjiyUN4bLEr1DvkpWvi9nD0UFodgO298C33BC546C11EF83429E3A4EE25FE6", "collection":"v1-embedding", "similarScoreThreshold":0.7, "host":"vrs-cn-jmp3uszhe00010.dashvector.cn-hangzhou.aliyuncs.com"}
+                              }
+                  - name: envoy.filters.http.router
+  clusters:
+    - name: echo-server
+      connect_timeout: 30s
+      type: LOGICAL_DNS
+      # Comment out the following line to test on v6 networks
+      dns_lookup_family: V4_ONLY
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: echo-server
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: echo-server
+                      port_value: 3000
+
+    - name: outbound|6379||redis-server.dns
+      connect_timeout: 30s
+      type: LOGICAL_DNS
+      # Comment out the following line to test on v6 networks
+      dns_lookup_family: V4_ONLY
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: outbound|6379||redis-server.dns
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: redis-server
+                      port_value: 6379
+
+    - name: outbound|443||dashscope.dns
+      connect_timeout: 30s
+      type: LOGICAL_DNS
+      dns_lookup_family: V4_ONLY
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: outbound|443||dashscope.dns
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: dashscope.aliyuncs.com
+                      port_value: 443
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+          "sni": "dashscope.aliyuncs.com"
+    - name: outbound|443||dashvector.dns
+      connect_timeout: 30s
+      type: LOGICAL_DNS
+      dns_lookup_family: V4_ONLY
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: outbound|443||dashvector.dns
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: vrs-cn-jmp3uszhe00010.dashvector.cn-hangzhou.aliyuncs.com
+                      port_value: 443
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+          "sni": "vrs-cn-jmp3uszhe00010.dashvector.cn-hangzhou.aliyuncs.com"

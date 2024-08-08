@@ -1,0 +1,62 @@
+apiVersion: extensions.higress.io/v1alpha1
+kind: WasmPlugin
+metadata:
+  annotations:
+    higress.io/wasm-plugin-title: AI Proxy
+  labels:
+    higress.io/resource-definer: higress
+    higress.io/wasm-plugin-built-in: "true"
+    higress.io/wasm-plugin-category: custom
+    higress.io/wasm-plugin-name: ai-proxy
+    higress.io/wasm-plugin-version: 1.0.0
+  name: ai-proxy-1.0.0
+  namespace: higress-system
+spec:
+  defaultConfig: {}
+  defaultConfigDisable: true
+  matchRules:
+  - config:
+      provider:
+        type: qwen
+        apiTokens:
+        - "sk-602ac106f86640498444914e00cb0956"
+        qwenFileIds:
+        - "file-fe-K5PlLptJdLCkra8rYw6c1jo3"
+        modelMapping:
+          '*': "qwen-long"
+    configDisable: false
+    ingress:
+    - qwen
+  - config:
+      provider:
+        type: azure
+        apiTokens:
+        - "YOUR_AZURE_OPENAI_API_KEY"
+        azureServiceUrl: https://YOUR_RESOURCE_NAME.openai.azure.com/openai/deployments/YOUR_DEPLOYMENT_NAME/chat/completions?api-version=2024-02-01
+    configDisable: false
+    ingress:
+    - azure-openai
+  - config:
+      provider:
+        type: openai
+        apiTokens:
+        - "YOUR_OPENAI_API_KEY"
+    configDisable: false
+    ingress:
+    - openai
+  - config:
+      provider:
+        type: moonshot
+        apiTokens:
+        - "YOUR_MOONSHOT_API_KEY"
+        modelMapping:
+          '*': "moonshot-v1-128k"
+          'gpt-3': "moonshot-v1-8k"
+          'gpt-35-turbo': "moonshot-v1-32k"
+          'gpt-4-turbo': "moonshot-v1-128k"
+    configDisable: false
+    ingress:
+    - moonshot
+  phase: UNSPECIFIED_PHASE
+  priority: "100"
+  url: oci://higress-registry.cn-hangzhou.cr.aliyuncs.com/plugins/ai-proxy:1.0.0

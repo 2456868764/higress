@@ -1,0 +1,26 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    higress.io/backend-protocol: HTTPS
+    higress.io/destination: moonshot.dns
+    higress.io/exact-match-header-Authorization: Bearer moonshot
+    higress.io/ignore-path-case: "false"
+    higress.io/proxy-ssl-name: api.moonshot.cn
+    higress.io/proxy-ssl-server-name: "on"
+  labels:
+    higress.io/resource-definer: higress
+  name: moonshot
+  namespace: higress-system
+spec:
+  ingressClassName: higress
+  rules:
+  - http:
+      paths:
+      - backend:
+          resource:
+            apiGroup: networking.higress.io
+            kind: McpBridge
+            name: default
+        path: /
+        pathType: Prefix

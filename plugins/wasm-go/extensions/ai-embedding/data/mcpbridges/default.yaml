@@ -1,0 +1,40 @@
+apiVersion: networking.higress.io/v1
+kind: McpBridge
+metadata:
+  name: default
+  namespace: higress-system
+  creationTimestamp: "2000-01-01T00:00:00Z"
+  resourceVersion: "1"
+spec:
+  registries:
+  - domain: 127.0.0.1:8001
+    name: higress-console
+    port: 80
+    type: static
+  # AI_REGISTRIES_START
+  - domain: api.moonshot.cn
+    name: moonshot
+    port: 443
+    type: dns
+  - domain: redis-server
+    name: redis-server
+    port: 6379
+    type: dns
+  - domain: YOUR_RESOURCE_NAME.openai.azure.com
+    name: azure-openai
+    port: 443
+    type: dns
+  - domain: dashscope.aliyuncs.com
+    name: qwen
+    port: 443
+    type: dns
+  - domain: vrs-cn-jmp3uszhe00010.dashvector.cn-hangzhou.aliyuncs.com
+    name: dashvector
+    port: 443
+    type: dns
+  - domain: api.openai.com
+    name: openai
+    port: 443
+    type: dns
+  # AI_REGISTRIES_END
+status: {}

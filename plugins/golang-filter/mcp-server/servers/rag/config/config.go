@@ -19,9 +19,10 @@ type RAGConfig struct {
 
 // SplitterConfig defines document splitter configuration
 type SplitterConfig struct {
-	Provider     string `json:"provider" yaml:"provider"` // Available options: recursive, character, token
-	ChunkSize    int    `json:"chunk_size,omitempty" yaml:"chunk_size,omitempty"`
-	ChunkOverlap int    `json:"chunk_overlap,omitempty" yaml:"chunk_overlap,omitempty"`
+	Provider       string `json:"provider" yaml:"provider"` // Available options: recursive, character, token
+	ChunkSize      int    `json:"chunk_size,omitempty" yaml:"chunk_size,omitempty"`
+	ChunkOverlap   int    `json:"chunk_overlap,omitempty" yaml:"chunk_overlap,omitempty"`
+	SmallChunkSize int    `json:"small_chunk_size,omitempty" yaml:"small_chunk_size,omitempty"`
 }
 
 // LLMConfig defines configuration for Large Language Models
@@ -45,14 +46,32 @@ type EmbeddingConfig struct {
 
 // VectorDBConfig defines configuration for vector databases
 type VectorDBConfig struct {
-	Provider   string        `json:"provider" yaml:"provider"` // Available options: milvus, qdrant, chroma
-	Host       string        `json:"host,omitempty" yaml:"host,omitempty"`
-	Port       int           `json:"port,omitempty" yaml:"port,omitempty"`
-	Database   string        `json:"database,omitempty" yaml:"database,omitempty"`
-	Collection string        `json:"collection,omitempty" yaml:"collection,omitempty"`
-	Username   string        `json:"username,omitempty" yaml:"username,omitempty"`
-	Password   string        `json:"password,omitempty" yaml:"password,omitempty"`
-	Mapping    MappingConfig `json:"mapping,omitempty" yaml:"mapping,omitempty"`
+	Provider     string             `json:"provider" yaml:"provider"` // Available options: milvus, qdrant, chroma
+	Host         string             `json:"host,omitempty" yaml:"host,omitempty"`
+	Port         int                `json:"port,omitempty" yaml:"port,omitempty"`
+	Database     string             `json:"database,omitempty" yaml:"database,omitempty"`
+	Collection   string             `json:"collection,omitempty" yaml:"collection,omitempty"`
+	Username     string             `json:"username,omitempty" yaml:"username,omitempty"`
+	Password     string             `json:"password,omitempty" yaml:"password,omitempty"`
+	Mapping      MappingConfig      `json:"mapping,omitempty" yaml:"mapping,omitempty"`
+	HybridSearch HybridSearchConfig `json:"hybrid_search,omitempty" yaml:"hybrid_search,omitempty"`
+}
+
+// RankerType defines the type of ranker used for hybrid search
+type RankerType string
+
+const (
+	// RFRanker uses Reciprocal Rank Fusion algorithm for ranking
+	RFRanker RankerType = "RFRanker"
+	// WeightedRanker uses weighted combination for ranking
+	WeightedRanker RankerType = "WeightedRanker"
+)
+
+// HybridSearchConfig defines configuration for hybrid search (combining vector and keyword search)
+type HybridSearchConfig struct {
+	Enabled      bool       `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	Ranker       RankerType `json:"ranker,omitempty" yaml:"ranker,omitempty"`
+	VectorWeight float64    `json:"vector_weight,omitempty" yaml:"vector_weight,omitempty"`
 }
 
 // MappingConfig defines field mapping configuration for vector databases

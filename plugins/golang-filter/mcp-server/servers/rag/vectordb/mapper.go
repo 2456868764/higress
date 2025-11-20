@@ -46,6 +46,9 @@ type VectorDBMapper interface {
 
 	// Get all field mappings
 	GetFieldMappings() ([]config.FieldMapping, error)
+
+	// Get sparse vector field mapping
+	GetSparseVectorField() (*config.FieldMapping, error)
 }
 
 // DefaultVectorDBMapper is the default implementation of VectorDBMapper interface
@@ -156,6 +159,11 @@ func (m *DefaultVectorDBMapper) GetIDField() (*config.FieldMapping, error) {
 // GetVectorField gets the vector field
 func (m *DefaultVectorDBMapper) GetVectorField() (*config.FieldMapping, error) {
 	return m.GetRawField("vector")
+}
+
+// GetSparseVectorField gets the sparse vector field mapping
+func (m *DefaultVectorDBMapper) GetSparseVectorField() (*config.FieldMapping, error) {
+	return m.GetRawField("sparse_vector")
 }
 
 // GetRawField gets the raw field mapping by standard field name

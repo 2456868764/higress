@@ -41,6 +41,11 @@ func getRAGClient() (*RAGClient, error) {
 			Port:       19530,
 			Database:   "default",
 			Collection: "test_collection3",
+			HybridSearch: config.HybridSearchConfig{
+				Enabled:      false,
+				Ranker:       config.RFRanker,
+				VectorWeight: 0.5,
+			},
 			Mapping: config.MappingConfig{
 				Fields: []config.FieldMapping{
 					{

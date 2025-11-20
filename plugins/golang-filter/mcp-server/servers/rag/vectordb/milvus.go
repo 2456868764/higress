@@ -9,8 +9,14 @@ import (
 
 	"github.com/alibaba/higress/plugins/golang-filter/mcp-server/servers/rag/config"
 	"github.com/alibaba/higress/plugins/golang-filter/mcp-server/servers/rag/schema"
-	"github.com/milvus-io/milvus-sdk-go/v2/client"
-	"github.com/milvus-io/milvus-sdk-go/v2/entity"
+
+	// "github.com/milvus-io/milvus-sdk-go/v2/client"
+
+	"github.com/milvus-io/milvus/client/v2/column"
+
+	"github.com/milvus-io/milvus/client/v2/entity"
+	"github.com/milvus-io/milvus/client/v2/index"
+	"github.com/milvus-io/milvus/client/v2/milvusclient"
 )
 
 const (
@@ -78,7 +84,7 @@ func (m *milvusProviderInitializer) CreateProvider(cfg *config.VectorDBConfig, d
 
 // MilvusProvider implements the vector store provider interface for Milvus
 type MilvusProvider struct {
-	client     client.Client
+	client     *milvusclient.Client
 	config     *config.VectorDBConfig
 	collection string
 	mapper     VectorDBMapper
@@ -88,7 +94,7 @@ type MilvusProvider struct {
 // NewMilvusProvider creates a new instance of MilvusProvider
 func NewMilvusProvider(cfg *config.VectorDBConfig, dimensions int) (VectorStoreProvider, error) {
 	// Create Milvus client
-	connectParam := client.Config{
+	connectParam := milvusclient.ClientConfig{
 		Address: fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
 	}
 	connectParam.DBName = cfg.Database
@@ -98,7 +104,7 @@ func NewMilvusProvider(cfg *config.VectorDBConfig, dimensions int) (VectorStoreP
 		connectParam.Password = cfg.Password
 	}
 
-	milvusClient, err := client.NewClient(context.Background(), connectParam)
+	milvusClient, err := milvusclient.New(context.Background(), &connectParam)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create milvus client: %w", err)
 	}
@@ -154,6 +160,11 @@ func (m *MilvusProvider) buildSchema() (*entity.Schema, error) {
 				WithName(field.RawName).
 				WithDataType(entity.FieldTypeVarChar).
 				WithMaxLength(int64(maxLength))
+
+			if m.config.HybridSearch.Enabled {
+				fieldEntity.WithEnableAnalyzer(true).WithAnalyzerParams(map[string]any{"tokenizer": "standard"})
+			}
+
 			schema.WithField(fieldEntity)
 		case "vector":
 			fieldEntity = entity.NewField().
@@ -171,6 +182,24 @@ func (m *MilvusProvider) buildSchema() (*entity.Schema, error) {
 				WithName(field.RawName).
 				WithDataType(entity.FieldTypeInt64)
 			schema.WithField(fieldEntity)
+		}
+	}
+	if m.config.HybridSearch.Enabled {
+		sparseVectorField, _ := m.mapper.GetSparseVectorField()
+		textField, _ := m.mapper.GetRawField("content")
+		if sparseVectorField != nil && textField != nil {
+			function := entity.NewFunction().
+				WithName("text_bm25_emb").
+				WithInputFields(textField.RawName).
+				WithOutputFields(sparseVectorField.RawName).
+				WithType(entity.FunctionTypeBM25)
+			// Add sparse vector field
+			// Note: BM25 function configuration may need to be done separately via Milvus API
+			sparseVectorField := entity.NewField().
+				WithName(sparseVectorField.RawName).
+				WithDataType(entity.FieldTypeSparseVector).
+				WithDescription("BM25 sparse vector field for hybrid search")
+			schema.WithField(sparseVectorField).WithFunction(function)
 		}
 	}
 	return schema, nil
@@ -199,7 +228,12 @@ func (m *MilvusProvider) GetMetricType(metricType string) entity.MetricType {
 	}
 }
 
-func (m *MilvusProvider) buildVectorIndex() (entity.Index, error) {
+func (m *MilvusProvider) buildSparseIndex(dropRatio float64) (index.Index, error) {
+	index := index.NewSparseInvertedIndex(entity.BM25, dropRatio)
+	return index, nil
+}
+
+func (m *MilvusProvider) buildVectorIndex() (index.Index, error) {
 	// Map index type
 	indexConfig, _ := m.mapper.GetIndexConfig()
 	searchConfig, _ := m.mapper.GetSearchConfig()
@@ -212,22 +246,16 @@ func (m *MilvusProvider) buildVectorIndex() (entity.Index, error) {
 	switch milvusIndexType {
 	case "FLAT":
 		// FLAT index doesn't need additional parameters
-		index, err := entity.NewIndexFlat(metricType)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create FLAT index: %w", err)
-		}
+		index := index.NewFlatIndex(metricType)
 		return index, nil
 
 	case "BIN_FLAT":
 		// BIN_FLAT index doesn't need additional parameters
-		nlist := 128
-		if nlistVal, err := indexConfig.ParamsInt64("nlist"); err == nil {
-			nlist = int(nlistVal)
-		}
-		index, err := entity.NewIndexBinFlat(metricType, nlist)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create BIN_FLAT index: %w", err)
-		}
+		// nlist := 128
+		// if nlistVal, err := indexConfig.ParamsInt64("nlist"); err == nil {
+		// 	nlist = int(nlistVal)
+		// }
+		index := index.NewBinFlatIndex(metricType)
 		return index, nil
 
 	case "IVF_FLAT":
@@ -236,10 +264,7 @@ func (m *MilvusProvider) buildVectorIndex() (entity.Index, error) {
 		if nlistVal, err := indexConfig.ParamsInt64("nlist"); err == nil {
 			nlist = int(nlistVal)
 		}
-		index, err := entity.NewIndexIvfFlat(metricType, nlist)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create IVF_FLAT index: %w", err)
-		}
+		index := index.NewIvfFlatIndex(metricType, nlist)
 		return index, nil
 
 	case "BIN_IVF_FLAT":
@@ -248,10 +273,7 @@ func (m *MilvusProvider) buildVectorIndex() (entity.Index, error) {
 		if nlistVal, err := indexConfig.ParamsInt64("nlist"); err == nil {
 			nlist = int(nlistVal)
 		}
-		index, err := entity.NewIndexBinIvfFlat(metricType, nlist)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create BIN_IVF_FLAT index: %w", err)
-		}
+		index := index.NewBinIvfFlatIndex(metricType, nlist)
 		return index, nil
 
 	case "IVF_SQ8":
@@ -260,10 +282,7 @@ func (m *MilvusProvider) buildVectorIndex() (entity.Index, error) {
 		if nlistVal, err := indexConfig.ParamsInt64("nlist"); err == nil {
 			nlist = int(nlistVal)
 		}
-		index, err := entity.NewIndexIvfSQ8(metricType, nlist)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create IVF_SQ8 index: %w", err)
-		}
+		index := index.NewIvfSQ8Index(metricType, nlist)
 		return index, nil
 
 	case "IVF_PQ":
@@ -282,10 +301,7 @@ func (m *MilvusProvider) buildVectorIndex() (entity.Index, error) {
 			nbits = int(nbitsVal)
 		}
 
-		index, err := entity.NewIndexIvfPQ(metricType, nlist, m, nbits)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create IVF_PQ index: %w", err)
-		}
+		index := index.NewIvfPQIndex(metricType, nlist, m, nbits)
 		return index, nil
 
 	case "HNSW":
@@ -298,41 +314,13 @@ func (m *MilvusProvider) buildVectorIndex() (entity.Index, error) {
 		if efConstructionVal, err := indexConfig.ParamsInt64("efConstruction"); err == nil {
 			efConstruction = int(efConstructionVal)
 		}
-		index, err := entity.NewIndexHNSW(metricType, m, efConstruction)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create HNSW index: %w", err)
-		}
-		return index, nil
-
-	case "IVF_HNSW":
-		// Default parameters
-		nlist := 128
-		m := 8
-		efConstruction := 64
-
-		if nlistVal, err := indexConfig.ParamsInt64("nlist"); err == nil {
-			nlist = int(nlistVal)
-		}
-		if mVal, err := indexConfig.ParamsInt64("M"); err == nil {
-			m = int(mVal)
-		}
-
-		if efConstructionVal, err := indexConfig.ParamsInt64("efConstruction"); err == nil {
-			efConstruction = int(efConstructionVal)
-		}
-
-		index, err := entity.NewIndexIvfHNSW(metricType, nlist, m, efConstruction)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create IVF_HNSW index: %w", err)
-		}
+		index := index.NewHNSWIndex(metricType, m, efConstruction)
 		return index, nil
 
 	case "DISKANN":
 		// DISKANN index parameters
-		index, err := entity.NewIndexDISKANN(metricType)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create DISKANN index: %w", err)
-		}
+		index := index.NewDiskANNIndex(metricType)
+
 		return index, nil
 
 	case "SCANN":
@@ -345,18 +333,12 @@ func (m *MilvusProvider) buildVectorIndex() (entity.Index, error) {
 		if with_raw_dataVal, err := indexConfig.ParamsBool("with_raw_data"); err == nil {
 			with_raw_data = with_raw_dataVal
 		}
-		index, err := entity.NewIndexSCANN(metricType, nlist, with_raw_data)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create SCANN index: %w", err)
-		}
+		index := index.NewSCANNIndex(metricType, nlist, with_raw_data)
 		return index, nil
 
 	case "AUTOINDEX":
 		// Auto index
-		index, err := entity.NewIndexAUTOINDEX(metricType)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create AUTOINDEX index: %w", err)
-		}
+		index := index.NewAutoIndex(metricType)
 		return index, nil
 
 	default:
@@ -367,7 +349,7 @@ func (m *MilvusProvider) buildVectorIndex() (entity.Index, error) {
 // CreateCollection creates a new collection with the specified dimension
 func (m *MilvusProvider) CreateCollection(ctx context.Context, dim int) error {
 	// Check if collection exists
-	document_exists, err := m.client.HasCollection(ctx, m.collection)
+	document_exists, err := m.client.HasCollection(context.Background(), milvusclient.NewHasCollectionOption(m.collection))
 	if err != nil {
 		return fmt.Errorf("failed to check %s collection existence: %w", m.collection, err)
 	}
@@ -380,7 +362,7 @@ func (m *MilvusProvider) CreateCollection(ctx context.Context, dim int) error {
 			return fmt.Errorf("failed to build schema: %w", err)
 		}
 		// Create collection
-		err = m.client.CreateCollection(ctx, schema, entity.DefaultShardNumber)
+		err = m.client.CreateCollection(context.Background(), milvusclient.NewCreateCollectionOption(m.collection, schema))
 		if err != nil {
 			return fmt.Errorf("failed to create collection: %w", err)
 		}
@@ -390,16 +372,28 @@ func (m *MilvusProvider) CreateCollection(ctx context.Context, dim int) error {
 		if err != nil {
 			return fmt.Errorf("failed to create vector index: %w", err)
 		}
-
-		err = m.client.CreateIndex(ctx, m.collection, vectorField.RawName, vectorIndex, false, client.WithIndexName("vector_index"))
+		_, err = m.client.CreateIndex(context.Background(), milvusclient.NewCreateIndexOption(m.collection, vectorField.RawName, vectorIndex))
 		if err != nil {
 			return fmt.Errorf("failed to create vector index: %w", err)
 		}
+		// create sparse index if hybrid search is enabled
+		if m.config.HybridSearch.Enabled {
+			sparseIndex, _ := m.buildSparseIndex(0.2)
+			sparseField, _ := m.mapper.GetSparseVectorField()
+
+			if sparseField == nil {
+				return fmt.Errorf("sparse field not found")
+			}
+			_, err = m.client.CreateIndex(context.Background(), milvusclient.NewCreateIndexOption(m.collection, sparseField.RawName, sparseIndex))
+			if err != nil {
+				return fmt.Errorf("failed to create sparse index: %w", err)
+			}
+		}
 	}
 	// Load collection
-	err = m.client.LoadCollection(ctx, m.collection, false)
-	if err != nil {
-		return fmt.Errorf("failed to load document collection: %w", err)
+	_, err2 := m.client.LoadCollection(context.Background(), milvusclient.NewLoadCollectionOption(m.collection))
+	if err2 != nil {
+		return fmt.Errorf("failed to load document collection: %w", err2)
 	}
 	return nil
 }
@@ -407,7 +401,7 @@ func (m *MilvusProvider) CreateCollection(ctx context.Context, dim int) error {
 // DropCollection removes the collection from the database
 func (m *MilvusProvider) DropCollection(ctx context.Context) error {
 	// Check if collection exists
-	exists, err := m.client.HasCollection(ctx, m.collection)
+	exists, err := m.client.HasCollection(context.Background(), milvusclient.NewHasCollectionOption(m.collection))
 	if err != nil {
 		return fmt.Errorf("failed to check %s collection existence: %w", m.collection, err)
 	}
@@ -415,7 +409,7 @@ func (m *MilvusProvider) DropCollection(ctx context.Context) error {
 		return fmt.Errorf("collection %s does not exist", m.collection)
 	}
 	// Drop collection
-	err = m.client.DropCollection(ctx, m.collection)
+	err = m.client.DropCollection(context.Background(), milvusclient.NewDropCollectionOption(m.collection))
 	if err != nil {
 		return fmt.Errorf("failed to drop collection: %w", err)
 	}
@@ -434,7 +428,7 @@ func (m *MilvusProvider) AddDoc(ctx context.Context, docs []schema.Document) err
 		return fmt.Errorf("failed to get field mappings: %w", err)
 	}
 	// Prepare data and columns
-	columns := make([]entity.Column, 0, len(fieldMappings))
+	columns := make([]column.Column, 0, len(fieldMappings))
 	// Create corresponding column data for each field
 	for _, field := range fieldMappings {
 		// Skip ID field if configured as auto ID
@@ -448,13 +442,13 @@ func (m *MilvusProvider) AddDoc(ctx context.Context, docs []schema.Document) err
 			for i, doc := range docs {
 				values[i] = doc.ID
 			}
-			columns = append(columns, entity.NewColumnVarChar(field.RawName, values))
+			columns = append(columns, column.NewColumnVarChar(field.RawName, values))
 		case "content":
 			values := make([]string, len(docs))
 			for i, doc := range docs {
 				values[i] = doc.Content
 			}
-			columns = append(columns, entity.NewColumnVarChar(field.RawName, values))
+			columns = append(columns, column.NewColumnVarChar(field.RawName, values))
 
 		case "vector":
 			// Handle vector fields
@@ -462,7 +456,7 @@ func (m *MilvusProvider) AddDoc(ctx context.Context, docs []schema.Document) err
 			for i, doc := range docs {
 				vectors[i] = doc.Vector
 			}
-			columns = append(columns, entity.NewColumnFloatVector(field.RawName, len(vectors[0]), vectors))
+			columns = append(columns, column.NewColumnFloatVector(field.RawName, len(vectors[0]), vectors))
 		case "metadata":
 			// Handle JSON type fields (like metadata)
 			values := make([][]byte, len(docs))
@@ -474,24 +468,23 @@ func (m *MilvusProvider) AddDoc(ctx context.Context, docs []schema.Document) err
 				}
 				values[i] = metadataBytes
 			}
-			columns = append(columns, entity.NewColumnJSONBytes(field.RawName, values))
+			columns = append(columns, column.NewColumnJSONBytes(field.RawName, values))
 		case "created_at":
 			// Handle integer type fields
 			values := make([]int64, len(docs))
 			for i, doc := range docs {
 				values[i] = doc.CreatedAt.UnixMilli()
 			}
-			columns = append(columns, entity.NewColumnInt64(field.RawName, values))
+			columns = append(columns, column.NewColumnInt64(field.RawName, values))
 		}
 	}
 	// Insert data
-	_, err = m.client.Insert(ctx, m.collection, "", columns...)
+	_, err = m.client.Insert(ctx, milvusclient.NewColumnBasedInsertOption(m.collection, columns...))
 	if err != nil {
 		return fmt.Errorf("failed to insert documents: %w", err)
 	}
-
 	// Flush data
-	err = m.client.Flush(ctx, m.collection, false)
+	_, err = m.client.Flush(ctx, milvusclient.NewFlushOption(m.collection))
 	if err != nil {
 		return fmt.Errorf("failed to flush collection: %w", err)
 	}
@@ -507,13 +500,13 @@ func (m *MilvusProvider) DeleteDoc(ctx context.Context, id string) error {
 	expr := fmt.Sprintf(`%s == "%s"`, idField.RawName, id)
 
 	// Delete data
-	err := m.client.Delete(ctx, m.collection, "", expr)
+	_, err := m.client.Delete(ctx, milvusclient.NewDeleteOption(m.collection).WithExpr(expr))
 	if err != nil {
 		return fmt.Errorf("failed to delete documents for id %s: %w", id, err)
 	}
 
 	// Flush data
-	err = m.client.Flush(ctx, m.collection, false)
+	_, err = m.client.Flush(ctx, milvusclient.NewFlushOption(m.collection))
 	if err != nil {
 		return fmt.Errorf("failed to flush collection after delete: %w", err)
 	}
@@ -539,101 +532,113 @@ func (m *MilvusProvider) UpdateDoc(ctx context.Context, docs []schema.Document) 
 	return nil
 }
 
-func (m *MilvusProvider) buildSearchParam() (entity.SearchParam, error) {
+func (m *MilvusProvider) buildSearchParam() (map[string]string, error) {
 	// Get index configuration
-	indexConfig, err := m.mapper.GetIndexConfig()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get index config: %w", err)
-	}
-
+	// indexConfig, err := m.mapper.GetIndexConfig()
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to get index config: %w", err)
+	// }
 	// Get search configuration
 	searchConfig, err := m.mapper.GetSearchConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get search config: %w", err)
 	}
 
-	// Choose appropriate search parameters based on index type
-	milvusIndexType := strings.ToUpper(indexConfig.IndexType)
-	if milvusIndexType == "" {
-		milvusIndexType = "HNSW" // Default to HNSW index
-	}
+	searchParam := make(map[string]string)
+	searchParam["metric_type"] = strings.ToUpper(searchConfig.MetricType)
 
-	switch milvusIndexType {
-	case "FLAT":
-		// FLAT and BIN_FLAT indices don't need additional search parameters
-		return entity.NewIndexFlatSearchParam()
+	return searchParam, nil
 
-	case "BIN_FLAT", "IVF_FLAT", "BIN_IVF_FLAT", "IVF_SQ8":
-		// Search parameters for IVF series indices
-		nprobe := 16 // Default value
-		if nprobeVal, err := searchConfig.ParamsFloat64("nprobe"); err == nil {
-			nprobe = int(nprobeVal)
-		}
-		return entity.NewIndexIvfFlatSearchParam(nprobe)
+	// // Choose appropriate search parameters based on index type
+	// milvusIndexType := strings.ToUpper(indexConfig.IndexType)
+	// if milvusIndexType == "" {
+	// 	milvusIndexType = "HNSW" // Default to HNSW index
+	// }
 
-	case "IVF_PQ":
-		// Search parameters for IVF_PQ index
-		nprobe := 16 // Default value
-		if nprobeVal, err := searchConfig.ParamsFloat64("nprobe"); err == nil {
-			nprobe = int(nprobeVal)
-		}
-		return entity.NewIndexIvfPQSearchParam(nprobe)
+	// switch milvusIndexType {
+	// case "FLAT":
+	// 	// FLAT and BIN_FLAT indices don't need additional search parameters
+	// 	return searchParam, nil
+	// case "BIN_FLAT", "IVF_FLAT", "BIN_IVF_FLAT", "IVF_SQ8":
+	// 	// Search parameters for IVF series indices
+	// 	nprobe := 16 // Default value
+	// 	if nprobeVal, err := searchConfig.ParamsFloat64("nprobe"); err == nil {
+	// 		nprobe = int(nprobeVal)
+	// 	}
+	// 	searchParam["nprobe"] = strconv.Itoa(nprobe)
+	// 	return searchParam, nil
 
-	case "HNSW":
-		// Search parameters for HNSW index
-		efSearch := 16 // Default value
-		if efSearchVal, err := searchConfig.ParamsFloat64("ef"); err == nil {
-			efSearch = int(efSearchVal)
-		}
-		return entity.NewIndexHNSWSearchParam(efSearch)
+	// case "IVF_PQ":
+	// 	// Search parameters for IVF_PQ index
+	// 	nprobe := 16 // Default value
+	// 	if nprobeVal, err := searchConfig.ParamsFloat64("nprobe"); err == nil {
+	// 		nprobe = int(nprobeVal)
+	// 	}
+	// 	searchParam["nprobe"] = strconv.Itoa(nprobe)
+	// 	return searchParam, nil
 
-	case "IVF_HNSW":
-		// Search parameters for IVF_HNSW index
-		nprobe := 16   // Default value
-		efSearch := 64 // Default value
-		if nprobeVal, err := searchConfig.ParamsFloat64("nprobe"); err == nil {
-			nprobe = int(nprobeVal)
-		}
-		if efSearchVal, err := searchConfig.ParamsFloat64("ef"); err == nil {
-			efSearch = int(efSearchVal)
-		}
-		return entity.NewIndexIvfHNSWSearchParam(nprobe, efSearch)
+	// case "HNSW":
+	// 	// Search parameters for HNSW index
+	// 	efSearch := 16 // Default value
+	// 	if efSearchVal, err := searchConfig.ParamsFloat64("ef"); err == nil {
+	// 		efSearch = int(efSearchVal)
+	// 	}
+	// 	searchParam["ef"] = strconv.Itoa(efSearch)
+	// 	return searchParam, nil
 
-	case "SCANN":
-		// Search parameters for SCANN index
-		nprobe := 16 // Default value
-		reorder_k := 64
-		if nprobeVal, err := searchConfig.ParamsFloat64("nprobe"); err == nil {
-			nprobe = int(nprobeVal)
-		}
-		if reorderKVal, err := searchConfig.ParamsInt64("reorder_k"); err == nil {
-			reorder_k = int(reorderKVal)
-		}
-		return entity.NewIndexSCANNSearchParam(nprobe, reorder_k)
+	// case "IVF_HNSW":
+	// 	// Search parameters for IVF_HNSW index
+	// 	nprobe := 16   // Default value
+	// 	efSearch := 64 // Default value
+	// 	if nprobeVal, err := searchConfig.ParamsFloat64("nprobe"); err == nil {
+	// 		nprobe = int(nprobeVal)
+	// 	}
+	// 	if efSearchVal, err := searchConfig.ParamsFloat64("ef"); err == nil {
+	// 		efSearch = int(efSearchVal)
+	// 	}
+	// 	searchParam["nprobe"] = strconv.Itoa(nprobe)
+	// 	searchParam["ef"] = strconv.Itoa(efSearch)
+	// 	return searchParam, nil
 
-	case "DISKANN":
-		// Search parameters for DISKANN index
-		search_list := 100 // Default value
-		if searchListVal, err := searchConfig.ParamsInt64("search_list"); err == nil {
-			search_list = int(searchListVal)
-		}
-		return entity.NewIndexDISKANNSearchParam(search_list)
+	// case "SCANN":
+	// 	// Search parameters for SCANN index
+	// 	nprobe := 16 // Default value
+	// 	reorder_k := 64
+	// 	if nprobeVal, err := searchConfig.ParamsFloat64("nprobe"); err == nil {
+	// 		nprobe = int(nprobeVal)
+	// 	}
+	// 	if reorderKVal, err := searchConfig.ParamsInt64("reorder_k"); err == nil {
+	// 		reorder_k = int(reorderKVal)
+	// 	}
+	// 	searchParam["nprobe"] = strconv.Itoa(nprobe)
+	// 	searchParam["reorder_k"] = strconv.Itoa(reorder_k)
+	// 	return searchParam, nil
 
-	case "AUTOINDEX":
-		level := 8
-		if levelVal, err := searchConfig.ParamsInt64("level"); err == nil {
-			level = int(levelVal)
-		}
-		// Search parameters for AUTOINDEX index
-		return entity.NewIndexAUTOINDEXSearchParam(level)
-	default:
-		// Default to using HNSW search parameters
-		return entity.NewIndexHNSWSearchParam(16)
-	}
+	// case "DISKANN":
+	// 	// Search parameters for DISKANN index
+	// 	search_list := 100 // Default value
+	// 	if searchListVal, err := searchConfig.ParamsInt64("search_list"); err == nil {
+	// 		search_list = int(searchListVal)
+	// 	}
+	// 	searchParam["search_list"] = strconv.Itoa(search_list)
+	// 	return searchParam, nil
+
+	// case "AUTOINDEX":
+	// 	level := 8
+	// 	if levelVal, err := searchConfig.ParamsInt64("level"); err == nil {
+	// 		level = int(levelVal)
+	// 	}
+	// 	searchParam["level"] = strconv.Itoa(level)
+	// 	return searchParam, nil
+	// default:
+	// 	// Default to using HNSW search parameters
+	// 	searchParam["ef"] = strconv.Itoa(16)
+	// 	return searchParam, nil
+	// }
 }
 
 // SearchDocs performs similarity search for documents
-func (m *MilvusProvider) SearchDocs(ctx context.Context, vector []float32, options *schema.SearchOptions) ([]schema.SearchResult, error) {
+func (m *MilvusProvider) SearchDocs(ctx context.Context, query string, vector []float32, options *schema.SearchOptions) ([]schema.SearchResult, error) {
 	if options == nil {
 		options = &schema.SearchOptions{TopK: 10}
 	}
@@ -646,24 +651,14 @@ func (m *MilvusProvider) SearchDocs(ctx context.Context, vector []float32, optio
 
 	outputFields, _ := m.mapper.GetRawAllFieldNames()
 	vectorField, _ := m.mapper.GetVectorField()
-	searchConfig, _ := m.mapper.GetSearchConfig()
-	metricType := m.GetMetricType(searchConfig.MetricType)
+
+	searchOption := milvusclient.NewSearchOption(m.collection, options.TopK, []entity.Vector{entity.FloatVector(vector)}).WithANNSField(vectorField.RawName).WithOutputFields(outputFields...)
+	for key, value := range sp {
+		searchOption = searchOption.WithSearchParam(key, value)
+	}
 
 	// Build filter expression
-	expr := ""
-	searchResults, err := m.client.Search(
-		ctx,
-		m.collection,
-		[]string{},   // partition names
-		expr,         // filter expression
-		outputFields, // output fields
-		[]entity.Vector{entity.FloatVector(vector)},
-		vectorField.RawName, // anns_field
-		metricType,          // metric_type
-		options.TopK,
-		sp,
-	)
-
+	searchResults, err := m.client.Search(ctx, searchOption)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search documents: %w", err)
 	}
@@ -685,7 +680,7 @@ func (m *MilvusProvider) SearchDocs(ctx context.Context, vector []float32, optio
 				fieldName := strings.ToLower(fieldMapping.StandardName)
 				switch fieldName {
 				case "content":
-					if contentCol, ok := field.(*entity.ColumnVarChar); ok {
+					if contentCol, ok := field.(*column.ColumnVarChar); ok {
 						if contentVal, err := contentCol.Get(i); err == nil {
 							if contentStr, ok := contentVal.(string); ok {
 								content = contentStr
@@ -693,7 +688,116 @@ func (m *MilvusProvider) SearchDocs(ctx context.Context, vector []float32, optio
 						}
 					}
 				case "metadata":
-					if metaCol, ok := field.(*entity.ColumnJSONBytes); ok {
+					if metaCol, ok := field.(*column.ColumnJSONBytes); ok {
+						if metaVal, err := metaCol.Get(i); err == nil {
+							if metaBytes, ok := metaVal.([]byte); ok {
+								if err := json.Unmarshal(metaBytes, &metadata); err != nil {
+									metadata = make(map[string]interface{})
+								}
+							}
+						}
+					}
+				}
+			}
+			searchResult := schema.SearchResult{
+				Document: schema.Document{
+					ID:       fmt.Sprintf("%s", id),
+					Content:  content,
+					Metadata: metadata,
+				},
+				Score: float64(score),
+			}
+			results = append(results, searchResult)
+		}
+	}
+	return results, nil
+}
+
+// SearchDocs performs similarity search for documents
+func (m *MilvusProvider) SearchHybridDocs(ctx context.Context, query string, vector []float32, options *schema.SearchOptions) ([]schema.SearchResult, error) {
+	if options == nil {
+		options = &schema.SearchOptions{TopK: 10}
+	}
+
+	// Build search parameters
+	sp, err := m.buildSearchParam()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build search param: %w", err)
+	}
+
+	outputFields, _ := m.mapper.GetRawAllFieldNames()
+	vectorField, _ := m.mapper.GetVectorField()
+	sparseVectorField, _ := m.mapper.GetSparseVectorField()
+
+	if sparseVectorField == nil {
+		return nil, fmt.Errorf("sparse vector field not found for hybrid search")
+	}
+
+	// Build vector search request
+	request1 := milvusclient.NewAnnRequest(vectorField.RawName, options.TopK, entity.FloatVector(vector))
+	for key, value := range sp {
+		request1 = request1.WithSearchParam(key, value)
+	}
+
+	// Build sparse vector search request
+	annParam := index.NewSparseAnnParam()
+	annParam.WithDropRatio(0.2)
+	request2 := milvusclient.NewAnnRequest(sparseVectorField.RawName, options.TopK, entity.Text(query)).
+		WithAnnParam(annParam)
+
+	// Build reranker based on configuration
+	var reranker milvusclient.Reranker
+	switch m.config.HybridSearch.Ranker {
+	case config.WeightedRanker:
+		// Use weighted reranker with configured vector weight
+		vectorWeight := m.config.HybridSearch.VectorWeight
+		if vectorWeight <= 0 {
+			vectorWeight = 0.5 // Default weight
+		}
+		reranker = milvusclient.NewWeightedReranker([]float64{vectorWeight, 1.0 - vectorWeight})
+	default:
+		// Default to RRF reranker
+		reranker = milvusclient.NewRRFReranker()
+	}
+
+	// Perform hybrid search
+	searchResults, err := m.client.HybridSearch(ctx, milvusclient.NewHybridSearchOption(
+		m.collection,
+		options.TopK,
+		request1,
+		request2,
+	).WithReranker(reranker).WithOutputFields(outputFields...))
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to perform hybrid search: %w", err)
+	}
+
+	// Parse results
+	var results []schema.SearchResult
+	for _, result := range searchResults {
+		for i := 0; i < result.ResultCount; i++ {
+			id, _ := result.IDs.Get(i)
+			score := result.Scores[i]
+			// Get field data
+			var content string
+			var metadata map[string]interface{}
+			for _, field := range result.Fields {
+				fieldMapping, err := m.mapper.GetField(field.Name())
+				if err != nil {
+					continue
+				}
+				fieldName := strings.ToLower(fieldMapping.StandardName)
+				switch fieldName {
+				case "content":
+					if contentCol, ok := field.(*column.ColumnVarChar); ok {
+						if contentVal, err := contentCol.Get(i); err == nil {
+							if contentStr, ok := contentVal.(string); ok {
+								content = contentStr
+							}
+						}
+					}
+				case "metadata":
+					if metaCol, ok := field.(*column.ColumnJSONBytes); ok {
 						if metaVal, err := metaCol.Get(i); err == nil {
 							if metaBytes, ok := metaVal.([]byte); ok {
 								if err := json.Unmarshal(metaBytes, &metadata); err != nil {
@@ -736,12 +840,12 @@ func (m *MilvusProvider) DeleteDocs(ctx context.Context, ids []string) error {
 	expr := fmt.Sprintf("%s in [%s]", idField.RawName, strings.Join(quotedIDs, ","))
 
 	// Delete data
-	err := m.client.Delete(ctx, m.collection, "", expr)
+	_, err := m.client.Delete(ctx, milvusclient.NewDeleteOption(m.collection).WithExpr(expr))
 	if err != nil {
 		return fmt.Errorf("failed to delete documents: %w", err)
 	}
 	// Flush data
-	err = m.client.Flush(ctx, m.collection, false)
+	_, err = m.client.Flush(ctx, milvusclient.NewFlushOption(m.collection))
 	if err != nil {
 		return fmt.Errorf("failed to flush collection after delete: %w", err)
 	}
@@ -752,27 +856,20 @@ func (m *MilvusProvider) DeleteDocs(ctx context.Context, ids []string) error {
 // ListDocs retrieves all documents with optional limit
 func (m *MilvusProvider) ListDocs(ctx context.Context, limit int) ([]schema.Document, error) {
 	// Build query expression
-	expr := ""
 	// Query all relevant documents
 	outputFields, _ := m.mapper.GetRawAllFieldNames()
-	queryResult, err := m.client.Query(
-		ctx,
-		m.collection,
-		[]string{}, // partitions
-		expr,       // filter condition
-		outputFields,
-		client.WithOffset(0), client.WithLimit(int64(limit)),
-	)
+	queryOption := milvusclient.NewQueryOption(m.collection).WithOutputFields(outputFields...).WithOffset(0).WithLimit(limit)
+	queryResult, err := m.client.Query(ctx, queryOption)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to query documents: %w", err)
 	}
 
-	if len(queryResult) == 0 {
+	rowCount := queryResult.ResultCount
+	if rowCount <= 0 {
 		return []schema.Document{}, nil
 	}
 
-	rowCount := queryResult[0].Len()
 	documents := make([]schema.Document, 0, rowCount)
 
 	// Parse query results
@@ -784,7 +881,7 @@ func (m *MilvusProvider) ListDocs(ctx context.Context, limit int) ([]schema.Docu
 			createdAt int64
 		)
 
-		for _, col := range queryResult {
+		for _, col := range queryResult.Fields {
 			fieldMapping, err := m.mapper.GetField(col.Name())
 			if err != nil {
 				continue
@@ -792,21 +889,21 @@ func (m *MilvusProvider) ListDocs(ctx context.Context, limit int) ([]schema.Docu
 			fieldName := strings.ToLower(fieldMapping.StandardName)
 			switch fieldName {
 			case "id":
-				if v, err := col.(*entity.ColumnVarChar).Get(i); err == nil {
+				if v, err := col.(*column.ColumnVarChar).Get(i); err == nil {
 					id = v.(string)
 				}
 			case "content":
-				if v, err := col.(*entity.ColumnVarChar).Get(i); err == nil {
+				if v, err := col.(*column.ColumnVarChar).Get(i); err == nil {
 					content = v.(string)
 				}
 			case "metadata":
-				if v, err := col.(*entity.ColumnJSONBytes).Get(i); err == nil {
+				if v, err := col.(*column.ColumnJSONBytes).Get(i); err == nil {
 					if bytes, ok := v.([]byte); ok {
 						_ = json.Unmarshal(bytes, &metadata)
 					}
 				}
 			case "created_at":
-				if v, err := col.(*entity.ColumnInt64).Get(i); err == nil {
+				if v, err := col.(*column.ColumnInt64).Get(i); err == nil {
 					createdAt = v.(int64)
 				}
 			}
@@ -831,7 +928,7 @@ func (m *MilvusProvider) GetProviderType() string {
 // Close closes the connection to the Milvus server
 func (m *MilvusProvider) Close() error {
 	if m.client != nil {
-		return m.client.Close()
+		return m.client.Close(context.Background())
 	}
 	return nil
 }

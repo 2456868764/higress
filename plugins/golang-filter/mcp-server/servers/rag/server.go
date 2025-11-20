@@ -20,9 +20,10 @@ func init() {
 		config: &config.Config{
 			RAG: config.RAGConfig{
 				Splitter: config.SplitterConfig{
-					Provider:     "recursive",
-					ChunkSize:    500,
-					ChunkOverlap: 50,
+					Provider:       "recursive",
+					ChunkSize:      500,
+					ChunkOverlap:   50,
+					SmallChunkSize: 0,
 				},
 				Threshold: 0.5,
 				TopK:      10,
@@ -45,7 +46,7 @@ func init() {
 			VectorDB: config.VectorDBConfig{
 				Provider:   "milvus",
 				Host:       "localhost",
-				Port:       6379,
+				Port:       19530,
 				Database:   "default",
 				Collection: "rag",
 				Username:   "",
@@ -92,6 +93,11 @@ func init() {
 						Params:     make(map[string]interface{}),
 					},
 				},
+				HybridSearch: config.HybridSearchConfig{
+					Enabled:      false,
+					Ranker:       config.RFRanker,
+					VectorWeight: 0.5,
+				},
 			},
 		},
 	})
@@ -109,6 +115,9 @@ func (c *RAGConfig) ParseConfig(cfg map[string]any) error {
 			}
 			if chunkOverlap, exists := splitter["chunk_overlap"].(float64); exists {
 				c.config.RAG.Splitter.ChunkOverlap = int(chunkOverlap)
+			}
+			if smallChunkSize, exists := splitter["small_chunk_size"].(float64); exists {
+				c.config.RAG.Splitter.SmallChunkSize = int(smallChunkSize)
 			}
 		}
 		if threshold, exists := ragConfig["threshold"].(float64); exists {
@@ -238,6 +247,19 @@ func (c *RAGConfig) ParseConfig(cfg map[string]any) error {
 				if params, ok := search["params"].(map[string]any); ok {
 					c.config.VectorDB.Mapping.Search.Params = params
 				}
+			}
+		}
+
+		// Parse hybrid search configuration
+		if hybridSearch, exists := vectordbConfig["hybrid_search"].(map[string]any); exists {
+			if enabled, exists := hybridSearch["enabled"].(bool); exists {
+				c.config.VectorDB.HybridSearch.Enabled = enabled
+			}
+			if ranker, exists := hybridSearch["ranker"].(string); exists {
+				c.config.VectorDB.HybridSearch.Ranker = config.RankerType(ranker)
+			}
+			if vectorWeight, exists := hybridSearch["vector_weight"].(float64); exists {
+				c.config.VectorDB.HybridSearch.VectorWeight = vectorWeight
 			}
 		}
 	}

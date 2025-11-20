@@ -124,7 +124,7 @@ func (r *RAGClient) SearchChunks(query string, topK int, threshold float64) ([]s
 		TopK:      topK,
 		Threshold: threshold,
 	}
-	docs, err := r.vectordbProvider.SearchDocs(context.Background(), vector, options)
+	docs, err := r.vectordbProvider.SearchDocs(context.Background(), query, vector, options)
 	if err != nil {
 		return nil, fmt.Errorf("search chunks failed, err: %w", err)
 	}

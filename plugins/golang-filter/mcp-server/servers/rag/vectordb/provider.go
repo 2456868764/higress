@@ -37,7 +37,7 @@ type VectorStoreProvider interface {
 	UpdateDoc(ctx context.Context, docs []schema.Document) error
 
 	// SearchDocs searches for similar documents in the vector store
-	SearchDocs(ctx context.Context, vector []float32, options *schema.SearchOptions) ([]schema.SearchResult, error)
+	SearchDocs(ctx context.Context, query string, vector []float32, options *schema.SearchOptions) ([]schema.SearchResult, error)
 
 	// DeleteDocs deletes documents by IDs from the vector store
 	DeleteDocs(ctx context.Context, ids []string) error

@@ -42,6 +42,12 @@ func TestRAGConfig_ParseConfig(t *testing.T) {
 			Collection: "test_rag",
 			Username:   "",
 			Password:   "",
+			HybridSearch: config.HybridSearchConfig{
+				Enabled:      false,
+				Ranker:       config.RFRanker,
+				VectorWeight: 0.5,
+			},
+
 			Mapping: config.MappingConfig{
 				Fields: []config.FieldMapping{
 					{

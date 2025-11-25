@@ -8,13 +8,24 @@ type Config struct {
 	LLM       LLMConfig       `json:"llm" yaml:"llm"`
 	Embedding EmbeddingConfig `json:"embedding" yaml:"embedding"`
 	VectorDB  VectorDBConfig  `json:"vectordb" yaml:"vectordb"`
+	Reranker  RerankerConfig  `json:"reranker,omitempty" yaml:"reranker,omitempty"`
 }
 
 // RAGConfig contains basic configuration for the RAG system
 type RAGConfig struct {
-	Splitter  SplitterConfig `json:"splitter" yaml:"splitter"`
-	Threshold float64        `json:"threshold,omitempty" yaml:"threshold,omitempty"`
-	TopK      int            `json:"top_k,omitempty" yaml:"top_k,omitempty"`
+	Splitter   SplitterConfig `json:"splitter" yaml:"splitter"`
+	Threshold  float64        `json:"threshold,omitempty" yaml:"threshold,omitempty"`
+	TopK       int            `json:"top_k,omitempty" yaml:"top_k,omitempty"`
+	Rerank     bool           `json:"rerank,omitempty" yaml:"rerank,omitempty"`             // Enable reranking
+	RerankTopK int            `json:"rerank_top_k,omitempty" yaml:"rerank_top_k,omitempty"` // Number of candidates for reranking (default: 20)
+}
+
+// RerankerConfig defines configuration for reranker service
+// Note: Reranker is enabled/disabled via RAGConfig.Rerank, not via this config
+type RerankerConfig struct {
+	BaseURL   string  `json:"base_url,omitempty" yaml:"base_url,omitempty"`   // Reranker service API base URL
+	APIKey    string  `json:"api_key,omitempty" yaml:"api_key,omitempty"`     // Optional API key for authentication
+	Threshold float64 `json:"threshold,omitempty" yaml:"threshold,omitempty"` // Score threshold for filtering
 }
 
 // SplitterConfig defines document splitter configuration
@@ -110,6 +121,10 @@ func (f FieldMapping) IsAutoID() bool {
 
 func (f FieldMapping) IsVectorField() bool {
 	return f.StandardName == "vector"
+}
+
+func (f FieldMapping) IsSparseVectorField() bool {
+	return f.StandardName == "sparse_vector"
 }
 
 func (f FieldMapping) MaxLength() int {

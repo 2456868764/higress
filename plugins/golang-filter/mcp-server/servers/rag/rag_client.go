@@ -9,11 +9,11 @@ import (
 	"github.com/alibaba/higress/plugins/golang-filter/mcp-server/servers/rag/config"
 	"github.com/alibaba/higress/plugins/golang-filter/mcp-server/servers/rag/embedding"
 	"github.com/alibaba/higress/plugins/golang-filter/mcp-server/servers/rag/llm"
+	"github.com/alibaba/higress/plugins/golang-filter/mcp-server/servers/rag/reranker"
 	"github.com/alibaba/higress/plugins/golang-filter/mcp-server/servers/rag/schema"
 	"github.com/alibaba/higress/plugins/golang-filter/mcp-server/servers/rag/textsplitter"
 	"github.com/alibaba/higress/plugins/golang-filter/mcp-server/servers/rag/vectordb"
 	"github.com/distribution/distribution/v3/uuid"
-	"github.com/envoyproxy/envoy/contrib/golang/common/go/api"
 )
 
 const (
@@ -28,11 +28,12 @@ type RAGClient struct {
 	embeddingProvider embedding.Provider
 	textSplitter      textsplitter.TextSplitter
 	llmProvider       llm.Provider
+	rerankerClient    *reranker.RerankerClient
 }
 
 // NewRAGClient creates a new RAG client instance
 func NewRAGClient(config *config.Config) (*RAGClient, error) {
-	api.LogDebugf("RAG NewRAGClient: %+v", config)
+	// api.LogDebugf("RAG NewRAGClient: %+v", config)
 	ragclient := &RAGClient{
 		config: config,
 	}
@@ -42,14 +43,14 @@ func NewRAGClient(config *config.Config) (*RAGClient, error) {
 	}
 	ragclient.textSplitter = textSplitter
 
-	api.LogDebugf("RAG New Embedding Provider: %+v", ragclient.config.Embedding)
+	// api.LogDebugf("RAG New Embedding Provider: %+v", ragclient.config.Embedding)
 	embeddingProvider, err := embedding.NewEmbeddingProvider(ragclient.config.Embedding)
 	if err != nil {
 		return nil, fmt.Errorf("create embedding provider failed, err: %w", err)
 	}
 	ragclient.embeddingProvider = embeddingProvider
 
-	api.LogDebugf("RAG New LLM Provider: %+v", ragclient.config.LLM)
+	// api.LogDebugf("RAG New LLM Provider: %+v", ragclient.config.LLM)
 	if ragclient.config.LLM.Provider == "" {
 		ragclient.llmProvider = nil
 	} else {
@@ -60,13 +61,24 @@ func NewRAGClient(config *config.Config) (*RAGClient, error) {
 		ragclient.llmProvider = llmProvider
 	}
 
-	api.LogDebugf("RAG New VectorDB Provider: %+v", ragclient.config.VectorDB)
+	// api.LogDebugf("RAG New VectorDB Provider: %+v", ragclient.config.VectorDB)
 	dim := ragclient.config.Embedding.Dimensions
 	provider, err := vectordb.NewVectorDBProvider(&ragclient.config.VectorDB, dim)
 	if err != nil {
 		return nil, fmt.Errorf("create vector store provider failed, err: %w", err)
 	}
 	ragclient.vectordbProvider = provider
+
+	// Initialize reranker client if reranking is enabled in RAG config
+	if ragclient.config.RAG.Rerank {
+		// api.LogDebugf("RAG New Reranker Client: %+v", ragclient.config.Reranker)
+		rerankerClient, err := reranker.NewRerankerClient(&ragclient.config.Reranker)
+		if err != nil {
+			return nil, fmt.Errorf("create reranker client failed, err: %w", err)
+		}
+		ragclient.rerankerClient = rerankerClient
+	}
+
 	return ragclient, nil
 }
 
@@ -118,21 +130,69 @@ func (r *RAGClient) CreateChunkFromText(text string, title string) ([]schema.Doc
 	return results, nil
 }
 
-// SearchChunks searches for document chunks
+// SearchChunks searches for document chunks with optional reranking
+// If reranking is enabled, it first retrieves more candidates (RerankTopK, default 20),
+// then reranks them to return topK results, similar to Python's simple_retrieval.py
 func (r *RAGClient) SearchChunks(query string, topK int, threshold float64) ([]schema.SearchResult, error) {
-
 	vector, err := r.embeddingProvider.GetEmbedding(context.Background(), query)
+	// fmt.Printf("vector: %+v\n", vector)
+
 	if err != nil {
 		return nil, fmt.Errorf("create embedding failed, err: %w", err)
 	}
+
+	// Check if reranking should be used
+	useRerank := r.config.RAG.Rerank && r.rerankerClient != nil
+
+	var searchTopK int
+	if useRerank {
+		// If reranking is enabled, retrieve more candidates first (similar to Python's similarity_top_k=20)
+		searchTopK = r.config.RAG.RerankTopK
+		if searchTopK == 0 {
+			searchTopK = 20 // Default to 20 candidates for reranking, same as Python implementation
+		}
+		// Ensure we have enough candidates for reranking
+		if searchTopK < topK {
+			searchTopK = topK * 2
+		}
+	} else {
+		// Direct retrieval without reranking
+		searchTopK = topK
+	}
+
 	options := &schema.SearchOptions{
-		TopK:      topK,
+		TopK:      searchTopK,
 		Threshold: threshold,
 	}
-	docs, err := r.vectordbProvider.SearchDocs(context.Background(), query, vector, options)
-	if err != nil {
-		return nil, fmt.Errorf("search chunks failed, err: %w", err)
+
+	var docs []schema.SearchResult
+	if r.config.VectorDB.HybridSearch.Enabled {
+		docs, err = r.vectordbProvider.SearchHybridDocs(context.Background(), query, vector, options)
+		if err != nil {
+			return nil, fmt.Errorf("search hybrid chunks failed, err: %w", err)
+		}
+	} else {
+		// fmt.Printf("search query: %s, options: %+v\n", query, options)
+		docs, err = r.vectordbProvider.SearchDocs(context.Background(), query, vector, options)
+		if err != nil {
+			return nil, fmt.Errorf("search chunks failed, err: %w", err)
+		}
 	}
+
+	// Apply reranking if enabled
+	if useRerank {
+		// Use reranker threshold if configured, otherwise use the provided threshold
+		rerankThreshold := threshold
+		if r.config.Reranker.Threshold >= 0 {
+			rerankThreshold = r.config.Reranker.Threshold
+		}
+
+		docs, err = r.rerankerClient.RerankSearchResults(context.Background(), query, docs, topK, rerankThreshold)
+		if err != nil {
+			return nil, fmt.Errorf("rerank failed, err: %w", err)
+		}
+	}
+
 	return docs, nil
 }
 

@@ -17,3 +17,5 @@ target/
 tools/hack/cluster.conf
 envoy/1.20
 istio/1.12
+plugins/golang-filter/mcp-server/servers/rag/python/models/
+_pycache__/

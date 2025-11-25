@@ -17,7 +17,7 @@ type RAGConfig struct {
 }
 
 func init() {
-	api.LogDebugf("RAG init")
+	// api.LogDebugf("RAG init")
 	common.GlobalRegistry.RegisterServer("rag", &RAGConfig{
 		config: &config.Config{
 			RAG: config.RAGConfig{
@@ -27,8 +27,10 @@ func init() {
 					ChunkOverlap:   50,
 					SmallChunkSize: 0,
 				},
-				Threshold: 0.5,
-				TopK:      10,
+				Threshold:  0.5,
+				TopK:       10,
+				Rerank:     false,
+				RerankTopK: 20,
 			},
 			LLM: config.LLMConfig{
 				Provider:    "",
@@ -101,14 +103,19 @@ func init() {
 					VectorWeight: 0.5,
 				},
 			},
+			Reranker: config.RerankerConfig{
+				BaseURL:   "",
+				APIKey:    "",
+				Threshold: 0.0,
+			},
 		},
 	})
 }
 
 func (c *RAGConfig) ParseConfig(cfg map[string]any) error {
-	api.LogDebugf("RAG start to parse config: %+v", cfg)
+	// api.LogDebugf("RAG start to parse config: %+v", cfg)
 	// Parse RAG con
-	api.LogDebugf("RAG parse rag config")
+	// api.LogDebugf("RAG parse rag config")
 	if ragConfig, ok := cfg["rag"].(map[string]any); ok {
 		if splitter, exists := ragConfig["splitter"].(map[string]any); exists {
 			if splitterType, exists := splitter["provider"].(string); exists {
@@ -130,10 +137,16 @@ func (c *RAGConfig) ParseConfig(cfg map[string]any) error {
 		if topK, exists := ragConfig["top_k"].(float64); exists {
 			c.config.RAG.TopK = int(topK)
 		}
+		if rerank, exists := ragConfig["rerank"].(bool); exists {
+			c.config.RAG.Rerank = rerank
+		}
+		if rerankTopK, exists := ragConfig["rerank_top_k"].(float64); exists {
+			c.config.RAG.RerankTopK = int(rerankTopK)
+		}
 	}
 
 	// Parse Embedding configuration
-	api.LogDebugf("RAG parse embedding config")
+	// api.LogDebugf("RAG parse embedding config")
 	if embeddingConfig, ok := cfg["embedding"].(map[string]any); ok {
 		if provider, exists := embeddingConfig["provider"].(string); exists {
 			c.config.Embedding.Provider = provider
@@ -156,7 +169,7 @@ func (c *RAGConfig) ParseConfig(cfg map[string]any) error {
 	}
 
 	// Parse llm configuration
-	api.LogDebugf("RAG parse llm config")
+	// api.LogDebugf("RAG parse llm config")
 	if llmConfig, ok := cfg["llm"].(map[string]any); ok {
 		if provider, exists := llmConfig["provider"].(string); exists {
 			c.config.LLM.Provider = provider
@@ -179,7 +192,7 @@ func (c *RAGConfig) ParseConfig(cfg map[string]any) error {
 	}
 
 	// Parse VectorDB configuration
-	api.LogDebugf("RAG parse vectordb config")
+	// api.LogDebugf("RAG parse vectordb config")
 	if vectordbConfig, ok := cfg["vectordb"].(map[string]any); ok {
 		if provider, exists := vectordbConfig["provider"].(string); exists {
 			c.config.VectorDB.Provider = provider
@@ -271,7 +284,22 @@ func (c *RAGConfig) ParseConfig(cfg map[string]any) error {
 		}
 	}
 
-	api.LogDebugf("RAG parse config successful with config:%+v", c.config)
+	// Parse Reranker configuration
+	// api.LogDebugf("RAG parse reranker config")
+	// Note: Reranker is enabled/disabled via RAGConfig.Rerank, not via reranker.enabled
+	if rerankerConfig, ok := cfg["reranker"].(map[string]any); ok {
+		if baseURL, exists := rerankerConfig["base_url"].(string); exists {
+			c.config.Reranker.BaseURL = baseURL
+		}
+		if apiKey, exists := rerankerConfig["api_key"].(string); exists {
+			c.config.Reranker.APIKey = apiKey
+		}
+		if threshold, exists := rerankerConfig["threshold"].(float64); exists {
+			c.config.Reranker.Threshold = threshold
+		}
+	}
+
+	// api.LogDebugf("RAG parse config successful with config:%+v", c.config)
 	return nil
 }
 
@@ -284,13 +312,13 @@ func (c *RAGConfig) NewServer(serverName string) (*common.MCPServer, error) {
 	)
 
 	// Initialize RAG client with configuration
-	api.LogDebugf("RAG NewRAGClient: %+v", c.config)
+	// api.LogDebugf("RAG NewRAGClient: %+v", c.config)
 	ragClient, err := NewRAGClient(c.config)
 	if err != nil {
 		return nil, fmt.Errorf("create rag client failed, err: %w", err)
 	}
 
-	api.LogDebugf("RAG start add tool")
+	// api.LogDebugf("RAG start add tool")
 	// Knowledge Base Management Tools
 	mcpServer.AddTool(
 		mcp.NewToolWithRawSchema("create-chunks-from-text", "Process and segment input text into semantic chunks for knowledge base ingestion", GetCreateChunkFromTextSchema()),
@@ -318,6 +346,6 @@ func (c *RAGConfig) NewServer(serverName string) (*common.MCPServer, error) {
 		mcp.NewToolWithRawSchema("chat", "Answer user questions by retrieving relevant knowledge from the database and generating responses using RAG-enhanced LLM", GetChatSchema()),
 		HandleChat(ragClient),
 	)
-	api.LogDebugf("RAG NewServer successful")
+	// api.LogDebugf("RAG NewServer successful")
 	return mcpServer, nil
 }

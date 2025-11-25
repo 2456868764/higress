@@ -32,6 +32,9 @@ type VectorDBMapper interface {
 	// Get all raw field names
 	GetRawAllFieldNames() ([]string, error)
 
+	// Get output fields
+	GetOutputFields() ([]string, error)
+
 	// GetIDField returns the ID field mapping
 	GetIDField() (*config.FieldMapping, error)
 
@@ -102,6 +105,10 @@ func (m *DefaultVectorDBMapper) ParseMapping(provider string, cfg config.Mapping
 				RawName:      "vector",
 			},
 			{
+				StandardName: "sparse_vector",
+				RawName:      "sparse_vector",
+			},
+			{
 				StandardName: "metadata",
 				RawName:      "metadata",
 			},
@@ -146,6 +153,18 @@ func (m *DefaultVectorDBMapper) GetSearchConfig() (config.SearchConfig, error) {
 func (m *DefaultVectorDBMapper) GetRawAllFieldNames() ([]string, error) {
 	fieldNames := make([]string, 0, len(m.rawFieldMap))
 	for name := range m.rawFieldMap {
+		fieldNames = append(fieldNames, name)
+	}
+	return fieldNames, nil
+}
+
+// GetOutputFields gets all output fields
+func (m *DefaultVectorDBMapper) GetOutputFields() ([]string, error) {
+	fieldNames := make([]string, 0, len(m.rawFieldMap))
+	for name, field := range m.rawFieldMap {
+		if field.IsVectorField() || field.IsSparseVectorField() {
+			continue
+		}
 		fieldNames = append(fieldNames, name)
 	}
 	return fieldNames, nil

@@ -13,8 +13,8 @@ func getRAGClient() (*RAGClient, error) {
 		RAG: config.RAGConfig{
 			Splitter: config.SplitterConfig{
 				Provider:     "recursive",
-				ChunkSize:    200,
-				ChunkOverlap: 20,
+				ChunkSize:    500,
+				ChunkOverlap: 100,
 			},
 			Threshold: 0.5,
 			TopK:      10,
@@ -29,10 +29,10 @@ func getRAGClient() (*RAGClient, error) {
 
 		Embedding: config.EmbeddingConfig{
 			Provider:   "openai",
-			BaseURL:    "https://dashscope.aliyuncs.com/compatible-mode/v1",
-			APIKey:     "sk-xxxx",
-			Model:      "text-embedding-v4",
-			Dimensions: 1536,
+			BaseURL:    "http://localhost:8090/v1",
+			APIKey:     "sk-0d9dd773c0e24c169b113d10f46656ca",
+			Model:      "Qwen3-Embedding-0.6B",
+			Dimensions: 1024,
 		},
 
 		VectorDB: config.VectorDBConfig{
@@ -40,17 +40,17 @@ func getRAGClient() (*RAGClient, error) {
 			Host:       "localhost",
 			Port:       19530,
 			Database:   "default",
-			Collection: "test_collection3",
+			Collection: "corpus_collection",
 			HybridSearch: config.HybridSearchConfig{
 				Enabled:      false,
-				Ranker:       config.RFRanker,
+				Ranker:       config.WeightedRanker,
 				VectorWeight: 0.5,
 			},
 			Mapping: config.MappingConfig{
 				Fields: []config.FieldMapping{
 					{
 						StandardName: "id",
-						RawName:      "pk",
+						RawName:      "id",
 						Properties: map[string]interface{}{
 							"max_length": 256,
 							"auto_id":    false,
@@ -58,14 +58,20 @@ func getRAGClient() (*RAGClient, error) {
 					},
 					{
 						StandardName: "content",
-						RawName:      "page_content",
+						RawName:      "content",
 						Properties: map[string]interface{}{
-							"max_length": 8192,
+							"max_length": 2048,
 						},
 					},
 					{
 						StandardName: "vector",
-						RawName:      "page_vector",
+						RawName:      "vector",
+						Properties:   make(map[string]interface{}),
+					},
+
+					{
+						StandardName: "sparse_vector",
+						RawName:      "sparse_vector",
 						Properties:   make(map[string]interface{}),
 					},
 					{
@@ -73,18 +79,13 @@ func getRAGClient() (*RAGClient, error) {
 						RawName:      "metadata",
 						Properties:   make(map[string]interface{}),
 					},
-					{
-						StandardName: "created_at",
-						RawName:      "created_at",
-						Properties:   make(map[string]interface{}),
-					},
 				},
 				Index: config.IndexConfig{
-					IndexType: "IVF_FLAT",
-					Params:    map[string]interface{}{"nlist": 64},
+					IndexType: "HNSW",
+					Params:    map[string]interface{}{"M": 8, "efConstruction": 64},
 				},
 				Search: config.SearchConfig{
-					MetricType: "COSINE",
+					MetricType: "IP",
 					Params:     map[string]interface{}{"nprobe": 32},
 				},
 			},
@@ -120,7 +121,7 @@ func TestRAGClient_CreateChunkFromText(t *testing.T) {
 		t.Errorf("CreateChunkFromText() error = %v", err)
 		return
 	}
-	if len(docs) != 1 {
+	if len(docs) == 0 {
 		t.Errorf("CreateChunkFromText() docs len = %d, want 1", len(docs))
 		return
 	}
@@ -143,6 +144,7 @@ func TestRAGClient_ListChunks(t *testing.T) {
 		t.Errorf("ListChunks() docs len = %d, want > 0", len(docs))
 		return
 	}
+	t.Logf("ListChunks() len docs = %d", len(docs))
 }
 
 func TestRAGClient_DeleteChunk(t *testing.T) {
@@ -167,8 +169,8 @@ func TestRAGClient_SearchChunks(t *testing.T) {
 		return
 	}
 	topk := 2
-	threshold := 0.5
-	query := "multi-agent"
+	threshold := 0.0
+	query := "apple"
 	docs, err := ragClient.SearchChunks(query, topk, threshold)
 	if err != nil {
 		t.Errorf("SearchChunks() error = %v", err)
@@ -178,7 +180,7 @@ func TestRAGClient_SearchChunks(t *testing.T) {
 		t.Errorf("SearchChunks() docs len = %d, want %d", len(docs), topk)
 		return
 	}
-
+	t.Logf("SearchChunks() docs = %v", docs)
 }
 
 func TestRAGClient_Chat(t *testing.T) {

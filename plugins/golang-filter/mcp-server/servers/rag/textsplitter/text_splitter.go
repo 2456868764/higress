@@ -21,7 +21,7 @@ func (s NoSplitterCharacter) SplitText(text string) ([]string, error) {
 func NewTextSplitter(cfg *config.SplitterConfig) (TextSplitter, error) {
 	switch cfg.Provider {
 	case "recursive":
-		return NewRecursiveCharacter(WithChunkSize(cfg.ChunkSize), WithChunkOverlap(cfg.ChunkOverlap), WithSeparators([]string{"\n\n", "\n", ".", "。", "?", "!", "；"})), nil
+		return NewRecursiveCharacter(WithChunkSize(cfg.ChunkSize), WithChunkOverlap(cfg.ChunkOverlap), WithSeparators([]string{"\n\n", "\n", ".", ",", ";", "。", "?", "!", "；"})), nil
 	case "nosplitter":
 		return NoSplitterCharacter{}, nil
 	default:

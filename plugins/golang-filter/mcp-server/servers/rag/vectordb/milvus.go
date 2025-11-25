@@ -24,6 +24,23 @@ const (
 	MILVUS_PROVIDER_TYPE = "milvus"
 )
 
+var (
+	STOPWORDS = []string{
+		"a", "an", "and", "are", "as", "at", "be", "been", "being", "but", "by",
+		"can", "could", "did", "do", "does", "doing", "done", "each", "few", "for",
+		"from", "had", "has", "have", "having", "he", "her", "here", "hers", "herself",
+		"him", "himself", "his", "how", "i", "if", "in", "into", "is", "it", "its",
+		"itself", "me", "more", "most", "my", "myself", "no", "nor", "not", "now",
+		"of", "on", "once", "only", "or", "other", "our", "ours", "ourselves", "out",
+		"over", "own", "same", "she", "should", "so", "some", "such", "than", "that",
+		"the", "their", "theirs", "them", "themselves", "then", "there", "these",
+		"they", "this", "those", "through", "to", "too", "under", "until", "up",
+		"very", "was", "we", "were", "what", "when", "where", "which", "while",
+		"who", "whom", "why", "will", "with", "would", "you", "your", "yours",
+		"yourself", "yourselves",
+	}
+)
+
 // MilvusProviderInitializer initializes the Milvus vector store provider
 type milvusProviderInitializer struct{}
 
@@ -162,7 +179,18 @@ func (m *MilvusProvider) buildSchema() (*entity.Schema, error) {
 				WithMaxLength(int64(maxLength))
 
 			if m.config.HybridSearch.Enabled {
-				fieldEntity.WithEnableAnalyzer(true).WithAnalyzerParams(map[string]any{"tokenizer": "standard"})
+				analyzerParams := map[string]any{
+					"tokenizer": "standard",
+					"filter": []any{
+						"lowercase",
+						map[string]any{
+							"type":       "stop",
+							"stop_words": STOPWORDS,
+						},
+					},
+				}
+
+				fieldEntity.WithEnableAnalyzer(true).WithAnalyzerParams(analyzerParams)
 			}
 
 			schema.WithField(fieldEntity)
@@ -640,7 +668,7 @@ func (m *MilvusProvider) buildSearchParam() (map[string]string, error) {
 // SearchDocs performs similarity search for documents
 func (m *MilvusProvider) SearchDocs(ctx context.Context, query string, vector []float32, options *schema.SearchOptions) ([]schema.SearchResult, error) {
 	if options == nil {
-		options = &schema.SearchOptions{TopK: 10}
+		options = &schema.SearchOptions{TopK: 10, Threshold: 0.0}
 	}
 
 	// Build search parameters
@@ -649,13 +677,15 @@ func (m *MilvusProvider) SearchDocs(ctx context.Context, query string, vector []
 		return nil, fmt.Errorf("failed to build search param: %w", err)
 	}
 
-	outputFields, _ := m.mapper.GetRawAllFieldNames()
+	outputFields, _ := m.mapper.GetOutputFields()
 	vectorField, _ := m.mapper.GetVectorField()
 
 	searchOption := milvusclient.NewSearchOption(m.collection, options.TopK, []entity.Vector{entity.FloatVector(vector)}).WithANNSField(vectorField.RawName).WithOutputFields(outputFields...)
 	for key, value := range sp {
 		searchOption = searchOption.WithSearchParam(key, value)
 	}
+
+	// fmt.Printf("search option: %+v\n", searchOption)
 
 	// Build filter expression
 	searchResults, err := m.client.Search(ctx, searchOption)
@@ -707,6 +737,12 @@ func (m *MilvusProvider) SearchDocs(ctx context.Context, query string, vector []
 				},
 				Score: float64(score),
 			}
+
+			// Filter results by threshold
+			if searchResult.Score < options.Threshold {
+				continue
+			}
+
 			results = append(results, searchResult)
 		}
 	}
@@ -716,7 +752,7 @@ func (m *MilvusProvider) SearchDocs(ctx context.Context, query string, vector []
 // SearchDocs performs similarity search for documents
 func (m *MilvusProvider) SearchHybridDocs(ctx context.Context, query string, vector []float32, options *schema.SearchOptions) ([]schema.SearchResult, error) {
 	if options == nil {
-		options = &schema.SearchOptions{TopK: 10}
+		options = &schema.SearchOptions{TopK: 10, Threshold: 0.0}
 	}
 
 	// Build search parameters
@@ -725,7 +761,7 @@ func (m *MilvusProvider) SearchHybridDocs(ctx context.Context, query string, vec
 		return nil, fmt.Errorf("failed to build search param: %w", err)
 	}
 
-	outputFields, _ := m.mapper.GetRawAllFieldNames()
+	outputFields, _ := m.mapper.GetOutputFields()
 	vectorField, _ := m.mapper.GetVectorField()
 	sparseVectorField, _ := m.mapper.GetSparseVectorField()
 
@@ -816,6 +852,10 @@ func (m *MilvusProvider) SearchHybridDocs(ctx context.Context, query string, vec
 				},
 				Score: float64(score),
 			}
+			// Filter results by threshold
+			if searchResult.Score < options.Threshold {
+				continue
+			}
 			results = append(results, searchResult)
 		}
 	}
@@ -857,7 +897,7 @@ func (m *MilvusProvider) DeleteDocs(ctx context.Context, ids []string) error {
 func (m *MilvusProvider) ListDocs(ctx context.Context, limit int) ([]schema.Document, error) {
 	// Build query expression
 	// Query all relevant documents
-	outputFields, _ := m.mapper.GetRawAllFieldNames()
+	outputFields, _ := m.mapper.GetOutputFields()
 	queryOption := milvusclient.NewQueryOption(m.collection).WithOutputFields(outputFields...).WithOffset(0).WithLimit(limit)
 	queryResult, err := m.client.Query(ctx, queryOption)
 

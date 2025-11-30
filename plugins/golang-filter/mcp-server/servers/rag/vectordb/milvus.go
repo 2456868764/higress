@@ -751,6 +751,7 @@ func (m *MilvusProvider) SearchDocs(ctx context.Context, query string, vector []
 
 // SearchDocs performs similarity search for documents
 func (m *MilvusProvider) SearchHybridDocs(ctx context.Context, query string, vector []float32, options *schema.SearchOptions) ([]schema.SearchResult, error) {
+	// fmt.Printf("search hybrid docs:%s\n", query)
 	if options == nil {
 		options = &schema.SearchOptions{TopK: 10, Threshold: 0.0}
 	}
@@ -859,6 +860,7 @@ func (m *MilvusProvider) SearchHybridDocs(ctx context.Context, query string, vec
 			results = append(results, searchResult)
 		}
 	}
+	// fmt.Printf("total result:%d", len(results))
 	return results, nil
 }
 

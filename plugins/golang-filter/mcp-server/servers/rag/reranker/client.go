@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 
 	"github.com/alibaba/higress/plugins/golang-filter/mcp-server/servers/rag/common"
 	"github.com/alibaba/higress/plugins/golang-filter/mcp-server/servers/rag/config"
@@ -118,5 +119,23 @@ func (c *RerankerClient) RerankSearchResults(ctx context.Context, query string, 
 		}
 	}
 
-	return reranked, nil
+	// Filter by threshold
+	filtered := make([]schema.SearchResult, 0, len(reranked))
+	for _, result := range reranked {
+		if result.Score >= threshold {
+			filtered = append(filtered, result)
+		}
+	}
+
+	// Sort by Score in descending order
+	sort.Slice(filtered, func(i, j int) bool {
+		return filtered[i].Score > filtered[j].Score
+	})
+
+	// Return only topN results
+	if topN > 0 && topN < len(filtered) {
+		filtered = filtered[:topN]
+	}
+
+	return filtered, nil
 }

@@ -202,13 +202,14 @@ func getDir(path string) string {
 func main() {
 	// Define command line flags
 	var (
-		inputFile  = flag.String("input", "/Users/jun/GolandProjects/higress/higress/plugins/golang-filter/mcp-server/servers/rag/python/dataset/MultiHopRAG.json", "Input JSON file containing queries")
-		outputFile = flag.String("output", "output/retrieval_rerank_500.json", "Output JSON file for retrieval results")
-		topK       = flag.Int("topk", 10, "Number of top results to return")
-		threshold  = flag.Float64("threshold", 0.0, "Score threshold for filtering")
-		rerank     = flag.Bool("rerank", true, "Enable reranking")
-		collection = flag.String("collection", "corpus_collection_500", "collection name")
-		rerankTopK = flag.Int("rerank_topk", 20, "Number of candidates to retrieve before reranking")
+		inputFile    = flag.String("input", "/Users/jun/GolandProjects/higress/higress/plugins/golang-filter/mcp-server/servers/rag/python/dataset/MultiHopRAG.json", "Input JSON file containing queries")
+		outputFile   = flag.String("output", "output/retrieval_hybrid_re_500.json", "Output JSON file for retrieval results")
+		topK         = flag.Int("topk", 10, "Number of top results to return")
+		threshold    = flag.Float64("threshold", 0.0, "Score threshold for filtering")
+		rerank       = flag.Bool("rerank", false, "Enable reranking")
+		collection   = flag.String("collection", "corpus_collection_500", "collection name")
+		rerankTopK   = flag.Int("rerank_topk", 20, "Number of candidates to retrieve before reranking")
+		hybridSearch = flag.Bool("hybrid_search", true, "Enable hybrid search")
 	)
 
 	flag.Parse()
@@ -237,8 +238,8 @@ func main() {
 		RAG: config.RAGConfig{
 			Splitter: config.SplitterConfig{
 				Provider:       "recursive",
-				ChunkSize:      1000,
-				ChunkOverlap:   100,
+				ChunkSize:      500,
+				ChunkOverlap:   50,
 				SmallChunkSize: 0,
 			},
 			TopK:       *topK,
@@ -273,8 +274,8 @@ func main() {
 			Database:   "default",
 			Collection: *collection,
 			HybridSearch: config.HybridSearchConfig{
-				Enabled:      false,
-				Ranker:       config.WeightedRanker,
+				Enabled:      *hybridSearch,
+				Ranker:       config.RFRanker,
 				VectorWeight: 0.5,
 			},
 			Mapping: config.MappingConfig{
@@ -350,6 +351,7 @@ func main() {
 	fmt.Printf("  TopK: %d\n", *topK)
 	fmt.Printf("  Threshold: %.2f\n", *threshold)
 	fmt.Printf("  Rerank: %v\n", *rerank)
+	fmt.Printf("  Hybrid Search: %v\n", *hybridSearch)
 	fmt.Printf("  RerankTopK: %d\n", *rerankTopK)
 	fmt.Printf("  Collection: %s\n", *collection)
 	fmt.Println()

@@ -334,6 +334,30 @@ class MilvusHybridVectorStore(VectorStoreBase):
         if threshold is not None:
             docs = self._score_threshold_process(docs, threshold, top_k)
 
+        # 召回父文档
+        parent_doc_map = {}
+        for i, tp in enumerate(docs):
+            parent_id = tp[0].metadata.get("parent_id")
+            if parent_id is not None: parent_doc_map[i] = parent_id
+
+        if len(parent_doc_map) > 0:
+            try:
+                ids = list(set(parent_doc_map.values()))
+                parent_docs = {}        # parent_id: parent_doc
+                for p_doc in self.pyclient.get(collection_name=self.collection_name,
+                                               ids=ids,
+                                               output_fields=output_fields):
+                    parent_docs[p_doc["id"]] = Document(page_content=p_doc["text"],
+                                                        metadata=p_doc["metadata"])
+                for doc_index in parent_doc_map:
+                    docs[doc_index] = tuple([parent_docs[parent_doc_map[doc_index]], docs[doc_index][1]])
+
+            except Exception as e:
+                msg = f"路由到parent chunk失败：{e}"
+                logger.error(f'{e.__class__.__name__}: {msg}', exc_info=e)    
+        
+        # 根据 metadata 中的 ID 去重文档
+        docs = self._deduplicate_docs_by_id(docs)        
         return docs
 
     def search_docs(self, text, top_k, threshold, **kwargs):
@@ -374,8 +398,58 @@ class MilvusHybridVectorStore(VectorStoreBase):
         if threshold is not None:
             docs = self._score_threshold_process(docs, threshold, top_k)
         
-        
+        # 召回父文档
+        parent_doc_map = {}
+        for i, tp in enumerate(docs):
+            parent_id = tp[0].metadata.get("parent_id")
+            if parent_id is not None: parent_doc_map[i] = parent_id
+
+        if len(parent_doc_map) > 0:
+            try:
+                ids = list(set(parent_doc_map.values()))
+                parent_docs = {}        # parent_id: parent_doc
+                for p_doc in self.pyclient.get(collection_name=self.collection_name,
+                                               ids=ids,
+                                               output_fields=output_fields):
+                    parent_docs[p_doc["id"]] = Document(page_content=p_doc["text"],
+                                                        metadata=p_doc["metadata"])
+                for doc_index in parent_doc_map:
+                    docs[doc_index] = tuple([parent_docs[parent_doc_map[doc_index]], docs[doc_index][1]])
+
+            except Exception as e:
+                msg = f"路由到parent chunk失败：{e}"
+                logger.error(f'{e.__class__.__name__}: {msg}', exc_info=e)
+
+        # 根据 metadata 中的 ID 去重文档
+        docs = self._deduplicate_docs_by_id(docs)        
         return docs
+
+    def _deduplicate_docs_by_id(self, docs):
+        """
+        根据 metadata 中的 ID 去重文档
+        
+        Args:
+            docs: 包含 (Document, score) 元组的列表
+            
+        Returns:
+            list: 去重后的文档列表，保留每个ID的最高分数文档
+        """
+        if not docs:
+            return docs
+            
+        # 使用字典存储每个ID的最佳文档（最高分数）
+        id_to_best_doc = {}
+        for doc, score in docs:
+            # 获取文档的ID，优先使用 'id' 字段，其次使用 'pk' 字段
+            doc_id = doc.metadata.get('id')
+            if doc_id not in id_to_best_doc or score > id_to_best_doc[doc_id][1]:
+                id_to_best_doc[doc_id] = (doc, score)
+        
+        # 按原始顺序返回去重后的文档，保持分数排序
+        deduplicated_docs = list(id_to_best_doc.values())
+        # 按分数降序排序
+        deduplicated_docs.sort(key=lambda x: x[1], reverse=True)
+        return deduplicated_docs    
 
     def _parse_document(self, data: dict) -> Document:
         return Document(

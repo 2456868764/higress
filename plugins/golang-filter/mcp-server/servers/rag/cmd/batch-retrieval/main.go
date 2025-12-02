@@ -204,6 +204,7 @@ func main() {
 	var (
 		inputFile    = flag.String("input", "/Users/jun/GolandProjects/higress/higress/plugins/golang-filter/mcp-server/servers/rag/python/dataset/MultiHopRAG.json", "Input JSON file containing queries")
 		outputFile   = flag.String("output", "output/retrieval_hybrid_re_500.json", "Output JSON file for retrieval results")
+		agent        = flag.String("agent", "default", "rag agent type: default, chain_of_rag, router")
 		topK         = flag.Int("topk", 10, "Number of top results to return")
 		threshold    = flag.Float64("threshold", 0.0, "Score threshold for filtering")
 		rerank       = flag.Bool("rerank", false, "Enable reranking")
@@ -246,6 +247,7 @@ func main() {
 			Threshold:  *threshold,
 			Rerank:     *rerank,
 			RerankTopK: *rerankTopK,
+			Agent:      *agent,
 		},
 
 		LLM: config.LLMConfig{
@@ -346,6 +348,7 @@ func main() {
 	// Perform batch retrieval
 	ctx := context.Background()
 	fmt.Printf("Starting batch retrieval:\n")
+	fmt.Printf("  Agent: %s\n", *agent)
 	fmt.Printf("  Input file: %s\n", *inputFile)
 	fmt.Printf("  Output file: %s\n", *outputFile)
 	fmt.Printf("  TopK: %d\n", *topK)

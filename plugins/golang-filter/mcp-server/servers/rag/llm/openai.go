@@ -100,7 +100,76 @@ func (o *OpenAIProvider) GenerateCompletion(ctx context.Context, prompt string) 
 	}
 
 	// Return generated content
-	return response.Choices[0].Message.Content, nil
+	content := RemoveThink(response.Choices[0].Message.Content)
+	return content, nil
+}
+
+// Chat implements Provider interface for chat-style conversations
+func (o *OpenAIProvider) Chat(ctx context.Context, messages []ChatMessage) (*ChatResponse, error) {
+	if len(messages) == 0 {
+		return nil, errors.New("openai llm: messages cannot be empty")
+	}
+
+	// Convert ChatMessage to OpenAI message format
+	openAIMessages := make([]openai.ChatCompletionMessageParamUnion, 0, len(messages))
+	for _, msg := range messages {
+		var openAIMsg openai.ChatCompletionMessageParamUnion
+		switch msg.Role {
+		case "system":
+			openAIMsg = openai.SystemMessage(msg.Content)
+		case "user":
+			openAIMsg = openai.UserMessage(msg.Content)
+		case "assistant":
+			openAIMsg = openai.AssistantMessage(msg.Content)
+		default:
+			// Default to user message if role is unknown
+			openAIMsg = openai.UserMessage(msg.Content)
+		}
+		openAIMessages = append(openAIMessages, openAIMsg)
+	}
+
+	// Create chat request
+	params := openai.ChatCompletionNewParams{
+		Model:    o.model,
+		Messages: openAIMessages,
+	}
+
+	// Set optional parameters
+	if o.temperature > 0 {
+		temperature := float64(o.temperature)
+		params.Temperature = param.Opt[float64]{Value: temperature}
+	}
+
+	if o.maxTokens > 0 {
+		maxTokens := int64(o.maxTokens)
+		params.MaxTokens = param.Opt[int64]{Value: maxTokens}
+	}
+
+	// Send request
+	response, err := o.client.Chat.Completions.New(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("openai llm error: %w", err)
+	}
+
+	// Check response
+	if len(response.Choices) == 0 {
+		return nil, errors.New("openai llm: empty choices")
+	}
+
+	// Extract content and token usage
+	content := response.Choices[0].Message.Content
+	// Remove think content from response
+	content = RemoveThink(content)
+
+	totalTokens := 0
+	if response.Usage.TotalTokens > 0 {
+		totalTokens = int(response.Usage.TotalTokens)
+	}
+
+	return &ChatResponse{
+		Content:     content,
+		TotalTokens: totalTokens,
+	}, nil
 }
 
 func (o *OpenAIProvider) GetProviderType() string {

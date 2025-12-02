@@ -138,6 +138,7 @@ def index_corpus_to_milvus(
     corpus_file_path: str,
     collection_name: str = "corpus_collection",
     chunk_size: int = 500,
+    smaller_chunk_size: int = 0,
     chunk_overlap: int = 50,
     batch_size: int = 100
 ):
@@ -220,11 +221,10 @@ def index_corpus_to_milvus(
                     'author': author if author else '',
                     'published_at': published_at,
                     'category': category,
+                    "chunk_type": "original"
                 }
-                
                 # Create Document objects from chunks
                 documents = create_documents_from_chunks(chunks, base_metadata)
-                
                 # Create CorpusFile object
                 corpus_file = CorpusFileImpl(
                     filename=url or title,
@@ -234,6 +234,24 @@ def index_corpus_to_milvus(
                 # Add documents to Milvus
                 doc_infos = vector_store.add_doc(corpus_file, documents)
                 total_chunks += len(documents)
+
+                if smaller_chunk_size > 0:
+                    # split the documents into smaller chunks
+                    smaller_documents = []
+                    for doc in documents:
+                        smaller_chunks = split_text(doc.page_content, chunk_size=smaller_chunk_size, chunk_overlap=0)
+                        if smaller_chunks:
+                            for smaller_chunk in smaller_chunks:
+                                smaller_base_metadata = base_metadata.copy()
+                                smaller_base_metadata["chunk_type"] = "smaller"
+                                smaller_base_metadata['parent_id'] = doc.metadata['id']
+                                smaller_documents = create_documents_from_chunks(smaller_chunks, smaller_base_metadata)
+                                smaller_corpus_file = CorpusFileImpl(
+                                    filename=url or title,
+                                    metadata=smaller_base_metadata
+                                )
+                                smaller_doc_infos = vector_store.add_doc(smaller_corpus_file, smaller_documents)
+                                total_chunks += len(smaller_documents)
                 
                 logger.debug(
                     f"Indexed document '{title}': "
@@ -272,9 +290,17 @@ if __name__ == "__main__":
     parser.add_argument(
         '--chunk_size',
         type=int,
-        default=1000,
+        default=500,
         help='Size of each text chunk'
     )
+
+    parser.add_argument(
+        '--smaller_chunk_size',
+        type=int,
+        default=0,
+        help='Size of each smaller text chunk'
+    )
+
     parser.add_argument(
         '--chunk_overlap',
         type=int,
@@ -303,6 +329,7 @@ if __name__ == "__main__":
         corpus_file_path=str(corpus_path),
         collection_name=args.collection_name,
         chunk_size=args.chunk_size,
+        smaller_chunk_size=args.smaller_chunk_size,
         chunk_overlap=args.chunk_overlap,
         batch_size=args.batch_size
     )

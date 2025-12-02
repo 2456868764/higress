@@ -9,6 +9,7 @@ import (
 
 	"github.com/alibaba/higress/plugins/golang-filter/mcp-server/servers/rag/embedding"
 	"github.com/alibaba/higress/plugins/golang-filter/mcp-server/servers/rag/llm"
+	"github.com/alibaba/higress/plugins/golang-filter/mcp-server/servers/rag/reranker"
 	"github.com/alibaba/higress/plugins/golang-filter/mcp-server/servers/rag/schema"
 	"github.com/alibaba/higress/plugins/golang-filter/mcp-server/servers/rag/vectordb"
 )
@@ -46,7 +47,8 @@ Respond with a concise answer only, do not explain yourself or output anything e
 ## Main query
 %s
 
-Respond with an appropriate answer only, do not explain yourself or output anything else.`
+Please respond with an appropriate answer only. If the provided information is insufficient to answer the question, respond 'Insufficient Information'. Answer directly without explanation.
+`
 
 	reflectionPrompt = `Given the following intermediate queries and answers, judge whether you have enough information to answer the main query. If you believe you have enough information, respond with "Yes", otherwise respond with "No".
 
@@ -80,37 +82,33 @@ type RetrievalResult struct {
 	Metadata map[string]interface{}
 }
 
-// ChatResponse represents a response from a chat model
-type ChatResponse struct {
-	Content     string
-	TotalTokens int
-}
-
-// ChatLLM extends the LLM provider interface with chat capabilities
-type ChatLLM interface {
-	llm.Provider
-	Chat(ctx context.Context, messages []ChatMessage) (*ChatResponse, error)
-	RemoveThink(content string) string
-	LiteralEval(content string) ([]int, error)
-}
-
-// ChatMessage represents a message in a chat conversation
-type ChatMessage struct {
-	Role    string
-	Content string
-}
+// ChainOfRAGDescription is the description for ChainOfRAG agent.
+// This agent can decompose complex queries and gradually find the fact information of sub-queries.
+// It is very suitable for handling concrete factual queries and multi-hop questions.
+var ChainOfRAGDescription = DescribeAgent(
+	"This agent can decompose complex queries and gradually find the fact information of sub-queries. " +
+		"It is very suitable for handling concrete factual queries and multi-hop questions.",
+)
 
 // ChainOfRAG implements Chain of Retrieval-Augmented Generation agent
 // This agent can decompose complex queries and gradually find the fact information of sub-queries.
 // It is very suitable for handling concrete factual queries and multi-hop questions.
 // ChainOfRAG implements the RAGAgent interface.
 type ChainOfRAG struct {
-	llm             ChatLLM
+	llm             llm.Provider
 	embeddingModel  embedding.Provider
 	vectorDB        vectordb.VectorStoreProvider
+	rerankerClient  *reranker.RerankerClient
+	config          *DefaultRAGConfig
 	maxIter         int
 	earlyStopping   bool
 	textWindowSplit bool
+}
+
+// Description returns the description of ChainOfRAG agent
+// This implements the DescribableAgent interface for use with RAGRouter
+func (c *ChainOfRAG) Description() string {
+	return ChainOfRAGDescription.Description
 }
 
 // Ensure ChainOfRAG implements RAGAgent interface at compile time
@@ -118,17 +116,25 @@ var _ RAGAgent = (*ChainOfRAG)(nil)
 
 // NewChainOfRAG creates a new ChainOfRAG agent
 func NewChainOfRAG(
-	llm ChatLLM,
+	llm llm.Provider,
 	embeddingModel embedding.Provider,
 	vectorDB vectordb.VectorStoreProvider,
+	rerankerClient *reranker.RerankerClient,
+	config *DefaultRAGConfig,
 	maxIter int,
 	earlyStopping bool,
 	textWindowSplit bool,
 ) (*ChainOfRAG, error) {
+
+	if config == nil {
+		config = DefaultRAGConfigWithDefaults()
+	}
 	return &ChainOfRAG{
 		llm:             llm,
 		embeddingModel:  embeddingModel,
 		vectorDB:        vectorDB,
+		rerankerClient:  rerankerClient,
+		config:          config,
 		maxIter:         maxIter,
 		earlyStopping:   earlyStopping,
 		textWindowSplit: textWindowSplit,
@@ -140,26 +146,26 @@ func (c *ChainOfRAG) reflectGetSubquery(ctx context.Context, query string, inter
 	contextStr := strings.Join(intermediateContext, "\n")
 	prompt := fmt.Sprintf(followupQueryPrompt, contextStr, query)
 
-	response, err := c.llm.Chat(ctx, []ChatMessage{
+	response, err := c.llm.Chat(ctx, []llm.ChatMessage{
 		{Role: "user", Content: prompt},
 	})
 	if err != nil {
 		return "", 0, err
 	}
 
-	return c.llm.RemoveThink(response.Content), response.TotalTokens, nil
+	return response.Content, response.TotalTokens, nil
 }
 
 // retrieveAndAnswer retrieves documents and generates an intermediate answer
-func (c *ChainOfRAG) retrieveAndAnswer(ctx context.Context, query string) (string, []RetrievalResult, int, error) {
+func (c *ChainOfRAG) retrieveAndAnswer(ctx context.Context, query string, topK int, threshold float64) (string, []RetrievalResult, int, error) {
 	queryVector, err := c.embeddingModel.GetEmbedding(ctx, query)
 	if err != nil {
 		return "", nil, 0, fmt.Errorf("failed to get embedding: %w", err)
 	}
 
 	searchOptions := &schema.SearchOptions{
-		TopK:      20,
-		Threshold: 0.0,
+		TopK:      topK,
+		Threshold: threshold,
 	}
 
 	searchResults, err := c.vectorDB.SearchDocs(ctx, query, queryVector, searchOptions)
@@ -182,14 +188,14 @@ func (c *ChainOfRAG) retrieveAndAnswer(ctx context.Context, query string) (strin
 	formattedDocs := c.formatRetrievedResults(allRetrievedResults)
 	prompt := fmt.Sprintf(intermediateAnswerPrompt, formattedDocs, query)
 
-	response, err := c.llm.Chat(ctx, []ChatMessage{
+	response, err := c.llm.Chat(ctx, []llm.ChatMessage{
 		{Role: "user", Content: prompt},
 	})
 	if err != nil {
 		return "", nil, 0, err
 	}
 
-	return c.llm.RemoveThink(response.Content), allRetrievedResults, response.TotalTokens, nil
+	return response.Content, allRetrievedResults, response.TotalTokens, nil
 }
 
 // getSupportedDocs filters documents that support the Q-A pair
@@ -206,14 +212,14 @@ func (c *ChainOfRAG) getSupportedDocs(
 	formattedDocs := c.formatRetrievedResults(retrievedResults)
 	prompt := fmt.Sprintf(getSupportedDocsPrompt, formattedDocs, query, intermediateAnswer)
 
-	response, err := c.llm.Chat(ctx, []ChatMessage{
+	response, err := c.llm.Chat(ctx, []llm.ChatMessage{
 		{Role: "user", Content: prompt},
 	})
 	if err != nil {
 		return nil, 0, err
 	}
 
-	supportedIndices, err := c.llm.LiteralEval(response.Content)
+	supportedIndices, err := LiteralEval(response.Content)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -237,14 +243,14 @@ func (c *ChainOfRAG) checkHasEnoughInfo(ctx context.Context, query string, inter
 	contextStr := strings.Join(intermediateContexts, "\n")
 	prompt := fmt.Sprintf(reflectionPrompt, contextStr, query)
 
-	response, err := c.llm.Chat(ctx, []ChatMessage{
+	response, err := c.llm.Chat(ctx, []llm.ChatMessage{
 		{Role: "user", Content: prompt},
 	})
 	if err != nil {
 		return false, 0, err
 	}
 
-	content := strings.ToLower(strings.TrimSpace(c.llm.RemoveThink(response.Content)))
+	content := strings.ToLower(strings.TrimSpace(response.Content))
 	hasEnoughInfo := content == "yes"
 	return hasEnoughInfo, response.TotalTokens, nil
 }
@@ -263,6 +269,18 @@ func (c *ChainOfRAG) Invoke(ctx context.Context, query string, kwargs map[string
 // Retrieve retrieves relevant documents based on the input query and iteratively refines the search
 // This implements the RAGAgent interface
 func (c *ChainOfRAG) Retrieve(ctx context.Context, query string, kwargs map[string]interface{}) ([]RetrievalResult, int, map[string]interface{}, error) {
+	topK := c.config.TopK
+	threshold := c.config.Threshold
+
+	if kwargs != nil {
+		if topKVal, ok := kwargs["top_k"].(int); ok {
+			topK = topKVal
+		}
+		if thresholdVal, ok := kwargs["threshold"].(float64); ok {
+			threshold = thresholdVal
+		}
+	}
+
 	iterations := c.maxIter
 	if kwargs != nil {
 		if maxIterVal, ok := kwargs["max_iter"].(int); ok {
@@ -280,7 +298,7 @@ func (c *ChainOfRAG) Retrieve(ctx context.Context, query string, kwargs map[stri
 			return nil, 0, nil, err
 		}
 
-		intermediateAnswer, retrievedResults, nToken1, err := c.retrieveAndAnswer(ctx, followupQuery)
+		intermediateAnswer, retrievedResults, nToken1, err := c.retrieveAndAnswer(ctx, followupQuery, topK, threshold)
 		if err != nil {
 			return nil, 0, nil, err
 		}
@@ -334,14 +352,14 @@ func (c *ChainOfRAG) Query(ctx context.Context, query string, kwargs map[string]
 	contextStr := strings.Join(intermediateContext, "\n")
 	prompt := fmt.Sprintf(finalAnswerPrompt, formattedDocs, contextStr, query)
 
-	response, err := c.llm.Chat(ctx, []ChatMessage{
+	response, err := c.llm.Chat(ctx, []llm.ChatMessage{
 		{Role: "user", Content: prompt},
 	})
 	if err != nil {
 		return "", nil, 0, err
 	}
 
-	finalAnswer := c.llm.RemoveThink(response.Content)
+	finalAnswer := response.Content
 	return finalAnswer, allRetrievedResults, nTokenRetrieval + response.TotalTokens, nil
 }
 
@@ -350,11 +368,6 @@ func (c *ChainOfRAG) formatRetrievedResults(retrievedResults []RetrievalResult) 
 	formattedDocuments := make([]string, 0)
 	for i, result := range retrievedResults {
 		text := result.Text
-		if c.textWindowSplit {
-			if widerText, ok := result.Metadata["wider_text"].(string); ok {
-				text = widerText
-			}
-		}
 		formattedDocuments = append(formattedDocuments, fmt.Sprintf("<Document %d>\n%s\n</Document %d>", i, text, i))
 	}
 	return strings.Join(formattedDocuments, "\n")
@@ -375,17 +388,12 @@ func deduplicateResults(results []RetrievalResult) []RetrievalResult {
 	return deduplicated
 }
 
-// RemoveThink removes content between <think> tags
-func RemoveThink(content string) string {
-	re := regexp.MustCompile(`(?s)<think>.*?</think>`)
-	content = re.ReplaceAllString(content, "")
-	return strings.TrimSpace(content)
-}
-
 // LiteralEval parses a string response into a list of integers
 func LiteralEval(content string) ([]int, error) {
 	content = strings.TrimSpace(content)
-	content = RemoveThink(content)
+	// Note: RemoveThink is already called in llm.Provider.Chat, but we call it again here
+	// in case this function is called with content that didn't go through Chat
+	content = llm.RemoveThink(content)
 
 	// Remove code blocks if present
 	if strings.HasPrefix(content, "```") {

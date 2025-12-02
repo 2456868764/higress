@@ -18,6 +18,7 @@ type RAGConfig struct {
 	TopK       int            `json:"top_k,omitempty" yaml:"top_k,omitempty"`
 	Rerank     bool           `json:"rerank,omitempty" yaml:"rerank,omitempty"`             // Enable reranking
 	RerankTopK int            `json:"rerank_top_k,omitempty" yaml:"rerank_top_k,omitempty"` // Number of candidates for reranking (default: 20)
+	Agent      string         `json:"agent,omitempty" yaml:"agent,omitempty"`               // Agent type: default, chain_of_rag
 }
 
 // RerankerConfig defines configuration for reranker service

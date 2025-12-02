@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+
+	"github.com/alibaba/higress/plugins/golang-filter/mcp-server/servers/rag/websearch"
 )
 
 // BaseAgent defines the basic interface for all agents in the RAG system.
@@ -58,21 +60,46 @@ type AgentDescription struct {
 }
 
 // DescribeAgent creates an AgentDescription with the given description text.
-// This is the Go equivalent of Python's describe_class decorator.
 //
 // Example usage:
-//
-//	var _ = DescribeAgent("This agent can decompose complex queries...")
 func DescribeAgent(description string) AgentDescription {
 	return AgentDescription{
 		Description: description,
 	}
 }
 
-// ChainOfRAGDescription is the description for ChainOfRAG agent.
-// This agent can decompose complex queries and gradually find the fact information of sub-queries.
-// It is very suitable for handling concrete factual queries and multi-hop questions.
-var ChainOfRAGDescription = DescribeAgent(
-	"This agent can decompose complex queries and gradually find the fact information of sub-queries. " +
-		"It is very suitable for handling concrete factual queries and multi-hop questions.",
-)
+// DefaultInternetSearchConfig returns default internet search configuration
+func DefaultInternetSearchConfig() *InternetSearchConfig {
+	return &InternetSearchConfig{
+		Enabled:    false,
+		MaxResults: 5,
+		Provider:   nil,
+	}
+}
+
+// InternetSearchConfig holds configuration for internet search
+type InternetSearchConfig struct {
+	Enabled    bool // Whether internet search is enabled
+	MaxResults int  // Maximum number of results to return per query
+	Provider   websearch.InternetSearchProvider
+}
+
+// DefaultRAGConfig holds configuration for DefaultRAG agent
+type DefaultRAGConfig struct {
+	TopK         int
+	Threshold    float64
+	Rerank       bool
+	RerankTopK   int
+	HybridSearch bool
+}
+
+// DefaultRAGConfigWithDefaults returns a DefaultRAGConfig with default values
+func DefaultRAGConfigWithDefaults() *DefaultRAGConfig {
+	return &DefaultRAGConfig{
+		TopK:         10,
+		Threshold:    0.0,
+		Rerank:       false,
+		RerankTopK:   20,
+		HybridSearch: false,
+	}
+}

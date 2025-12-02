@@ -99,11 +99,16 @@ QA 评估用于衡量模型生成答案的质量，基于预测答案与标准�
 
 - ChunkSize: 500
 - ChunkOverlap: 50
+- SmallChunkSize: 250
 - TopK: 10
 - Rerank: 20 (如果激活Reranker, 获查询 2 * Topk个 Chunk, 然后Rerank 后，返回 TopK Chunk)
 
 
-## 4. 评估本地环境搭建
+## 4. 评估流程和工具
+
+
+
+## 5. 评估本地环境搭建
 
 ### 1. 下载模型
 
@@ -159,16 +164,39 @@ python service.py
 
 该服务会自动从环境变量读取配置，支持本地模型加载。
 
+
+
+
 # ssh 
 ```
 ssh -L 8090:127.0.0.1:8090 -p 38376 root@connect.nmb1.seetacloud.com
 ```
 
-# 三、RAG 增强方案
+# 三、RAG 增强方案和评估
 
-## 1. baseline 和  Ground-truth QA 
 
-Retrieval 评估
+## 1. 增强方案
+
+整体 RAG 分三层 1. MCP Tool Interface 2. RAG Client 3. Retrieval, RAG 增强方案如下图：
+
+![](./images/arch.png)
+
+RAG 增强如下：
+- Retrieval 
+   - Reranker (*)
+   - Hybrid Search (*)
+   - Parent Document Retrieval (*)
+   
+- RAGClient
+   - RouterRAG  (*)
+   - ChainOfRAG (*)
+   - Deep Search (*)
+   - Reranker Service (*)
+
+
+## 2. 增强方案评估
+
+baseline Retrieval 评估
 ```
 retrieval_default_500.json
 Hits@10: 0.5876
@@ -177,7 +205,6 @@ MAP@10: 0.1656
 MRR@10: 0.3401
 ```
 base QA 评估
-
 ```
 Question Type: inference_query
  Recall: 0.9301
@@ -190,7 +217,6 @@ Question Type: temporal_query
 Overall Metrics:
  Recall: 0.6882
 ```
-
 Ground-truth QA
 
 ```
@@ -207,8 +233,7 @@ Overall Metrics:
 ```
 
 
-## 1. Rerank 
-
+reranker Retrieval 评估
 ```
 retrieval_rerank_500.json
 Hits@10: 0.6851
@@ -217,7 +242,7 @@ MAP@10: 0.2414
 MRR@10: 0.4888
 ```
 
-QA 评估
+reranker QA 评估
 
 ```
 Question Type: inference_query
@@ -232,6 +257,36 @@ Overall Metrics:
  Recall: 0.7050
 
 ```
+
+
+hybrid search Retrieval 评估
+```
+retrieval_hybrid_500.json
+Hits@10: 0.7020
+Hits@4: 0.5353
+MAP@10: 0.2033
+MRR@10: 0.4063
+```
+
+hybrid search QA 评估
+```
+Question Type: inference_query
+ Recall: 0.9534
+Question Type: comparison_query
+ Recall: 0.5853
+Question Type: null_query
+ Recall: 0.8306
+Question Type: temporal_query
+ Recall: 0.4957
+Overall Metrics:
+ Recall: 0.7113
+```
+
+
+# 四、RAG 增强方案细节
+
+## 1. Reranker 
+
 
 ## 2. 混合搜索(Hybrid Search)
 
@@ -330,27 +385,42 @@ searchResults, err := m.client.HybridSearch(ctx, milvusclient.NewHybridSearchOpt
 ```
 
 
-Retrieval 评估
-```
-retrieval_hybrid_500.json
-Hits@10: 0.7020
-Hits@4: 0.5353
-MAP@10: 0.2033
-MRR@10: 0.4063
-```
+## 3. Parent Docuemnt Retrieval 
 
-QA 评估
-```
-Question Type: inference_query
- Recall: 0.9534
-Question Type: comparison_query
- Recall: 0.5853
-Question Type: null_query
- Recall: 0.8306
-Question Type: temporal_query
- Recall: 0.4957
-Overall Metrics:
- Recall: 0.7113
-```
 
-## 3. ChainOfRAG
+
+适用于较长文档，流程如下：
+- 先将原文切成多个父文档块（大块）。
+- 每个父块再切成多个子文档块（用于embedding）。
+- 找到匹配的子块后，回溯其父块。
+- 将父块整体与问题发送给 LLM。
+
+
+问题
+- 小块 embedding 精准但信息不足
+- 大块信息丰富但匹配不准
+- 用户问题需要跨段推理
+
+父文档检索器的解决场景
+- 匹配后回溯父文档，提供完整上下文
+- 小块向量化匹配，定位更准确
+- 支持按需组合父块，提升多跳问答能力
+
+
+## 4. ChainOfRAG
+
+
+## 5. Deep Search
+
+
+## 6. RAG Router
+
+
+# 五、项目和代码
+
+## 1. 团队
+团队名称： 2456868764， Jun： 独立开发者
+
+## 2. 代码
+
+

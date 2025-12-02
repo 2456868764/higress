@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -746,6 +747,15 @@ func (m *MilvusProvider) SearchDocs(ctx context.Context, query string, vector []
 			results = append(results, searchResult)
 		}
 	}
+
+	// Retrieve parent documents if parent_id exists in metadata
+	results, err = m.retrieveParentDocs(ctx, results)
+	if err != nil {
+		// Log error but don't fail the entire search
+		// In production, you might want to use a logger here
+		return nil, fmt.Errorf("failed to get parent documents: %w", err)
+	}
+
 	return results, nil
 }
 
@@ -860,8 +870,200 @@ func (m *MilvusProvider) SearchHybridDocs(ctx context.Context, query string, vec
 			results = append(results, searchResult)
 		}
 	}
+
+	// Retrieve parent documents if parent_id exists in metadata
+	results, err = m.retrieveParentDocs(ctx, results)
+	if err != nil {
+		// Log error but don't fail the entire search
+		// In production, you might want to use a logger here
+		return nil, fmt.Errorf("failed to get parent documents: %w", err)
+	}
+
 	// fmt.Printf("total result:%d", len(results))
 	return results, nil
+}
+
+// retrieveParentDocs retrieves parent documents for results that have parent_id in metadata
+// This function replaces child documents with their parent documents while preserving scores
+func (m *MilvusProvider) retrieveParentDocs(ctx context.Context, results []schema.SearchResult) ([]schema.SearchResult, error) {
+	if len(results) == 0 {
+		return results, nil
+	}
+
+	// Collect parent IDs from metadata
+	parentDocMap := make(map[int]string) // index -> parent_id
+	parentIDSet := make(map[string]bool) // for deduplication
+
+	for i, result := range results {
+		if result.Document.Metadata != nil {
+			if parentID, ok := result.Document.Metadata["parent_id"].(string); ok && parentID != "" {
+				parentDocMap[i] = parentID
+				parentIDSet[parentID] = true
+			}
+		}
+	}
+
+	// If no parent IDs found, return original results
+	if len(parentIDSet) == 0 {
+		return results, nil
+	}
+
+	// Convert set to slice for query
+	parentIDs := make([]string, 0, len(parentIDSet))
+	for id := range parentIDSet {
+		parentIDs = append(parentIDs, id)
+	}
+
+	// Query parent documents by IDs
+	parentDocs, err := m.queryDocsByIDs(ctx, parentIDs)
+	if err != nil {
+		return results, fmt.Errorf("failed to retrieve parent documents: %w", err)
+	}
+
+	// Create a map for quick lookup: parent_id -> parent document
+	parentDocMapLookup := make(map[string]schema.Document)
+	for _, doc := range parentDocs {
+		parentDocMapLookup[doc.ID] = doc
+	}
+
+	// Replace child documents with parent documents
+	for index, parentID := range parentDocMap {
+		if parentDoc, ok := parentDocMapLookup[parentID]; ok {
+			// Replace the document but keep the original score
+			results[index].Document = parentDoc
+		}
+	}
+
+	// Deduplicate documents by metadata id, keeping the highest score for each id
+	results = m.deduplicateDocsByID(results)
+
+	return results, nil
+}
+
+// deduplicateDocsByID deduplicates documents by metadata id, keeping the document with the highest score for each id
+func (m *MilvusProvider) deduplicateDocsByID(results []schema.SearchResult) []schema.SearchResult {
+	if len(results) == 0 {
+		return results
+	}
+
+	// Use a map to store the best document (highest score) for each id
+	idToBestDoc := make(map[string]schema.SearchResult)
+
+	for _, result := range results {
+		// Get document ID from metadata, prefer 'id' field
+		var docID string
+		if result.Document.Metadata != nil {
+			if id, ok := result.Document.Metadata["id"].(string); ok && id != "" {
+				docID = id
+			}
+		}
+		// Fallback to document ID if metadata id is not available
+		if docID == "" {
+			docID = result.Document.ID
+		}
+
+		// Keep the document with the highest score for each id
+		if existing, exists := idToBestDoc[docID]; !exists || result.Score > existing.Score {
+			idToBestDoc[docID] = result
+		}
+	}
+
+	// Convert map values to slice
+	deduplicated := make([]schema.SearchResult, 0, len(idToBestDoc))
+	for _, result := range idToBestDoc {
+		deduplicated = append(deduplicated, result)
+	}
+
+	// Sort by score in descending order
+	sort.Slice(deduplicated, func(i, j int) bool {
+		return deduplicated[i].Score > deduplicated[j].Score
+	})
+
+	return deduplicated
+}
+
+// queryDocsByIDs queries documents by their IDs
+func (m *MilvusProvider) queryDocsByIDs(ctx context.Context, ids []string) ([]schema.Document, error) {
+	if len(ids) == 0 {
+		return []schema.Document{}, nil
+	}
+
+	// Build query expression: id in [id1, id2, ...]
+	idField, _ := m.mapper.GetIDField()
+	quotedIDs := make([]string, len(ids))
+	for i, id := range ids {
+		quotedIDs[i] = fmt.Sprintf("\"%s\"", id)
+	}
+	expr := fmt.Sprintf("%s in [%s]", idField.RawName, strings.Join(quotedIDs, ","))
+
+	// Query documents by IDs using filter expression
+	outputFields, _ := m.mapper.GetOutputFields()
+	queryOption := milvusclient.NewQueryOption(m.collection).
+		WithOutputFields(outputFields...).
+		WithFilter(expr).
+		WithLimit(len(ids))
+
+	queryResult, err := m.client.Query(ctx, queryOption)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query documents by IDs: %w", err)
+	}
+
+	rowCount := queryResult.ResultCount
+	if rowCount <= 0 {
+		return []schema.Document{}, nil
+	}
+
+	documents := make([]schema.Document, 0, rowCount)
+
+	// Parse query results
+	for i := 0; i < rowCount; i++ {
+		var (
+			id        string
+			content   string
+			metadata  map[string]interface{}
+			createdAt int64
+		)
+
+		for _, col := range queryResult.Fields {
+			fieldMapping, err := m.mapper.GetField(col.Name())
+			if err != nil {
+				continue
+			}
+			fieldName := strings.ToLower(fieldMapping.StandardName)
+			switch fieldName {
+			case "id":
+				if v, err := col.(*column.ColumnVarChar).Get(i); err == nil {
+					id = v.(string)
+				}
+			case "content":
+				if v, err := col.(*column.ColumnVarChar).Get(i); err == nil {
+					content = v.(string)
+				}
+			case "metadata":
+				if v, err := col.(*column.ColumnJSONBytes).Get(i); err == nil {
+					if bytes, ok := v.([]byte); ok {
+						if err := json.Unmarshal(bytes, &metadata); err != nil {
+							metadata = make(map[string]interface{})
+						}
+					}
+				}
+			case "created_at":
+				if v, err := col.(*column.ColumnInt64).Get(i); err == nil {
+					createdAt = v.(int64)
+				}
+			}
+		}
+
+		doc := schema.Document{
+			ID:        id,
+			Content:   content,
+			Metadata:  metadata,
+			CreatedAt: time.UnixMilli(createdAt),
+		}
+		documents = append(documents, doc)
+	}
+
+	return documents, nil
 }
 
 // DeleteDocs deletes multiple documents by their IDs

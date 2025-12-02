@@ -31,6 +31,7 @@ func init() {
 				TopK:       10,
 				Rerank:     false,
 				RerankTopK: 20,
+				Agent:      "default",
 			},
 			LLM: config.LLMConfig{
 				Provider:    "",
@@ -142,6 +143,9 @@ func (c *RAGConfig) ParseConfig(cfg map[string]any) error {
 		}
 		if rerankTopK, exists := ragConfig["rerank_top_k"].(float64); exists {
 			c.config.RAG.RerankTopK = int(rerankTopK)
+		}
+		if agent, exists := ragConfig["agent"].(string); exists {
+			c.config.RAG.Agent = agent
 		}
 	}
 

@@ -3,6 +3,8 @@ package llm
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strings"
 
 	"github.com/alibaba/higress/plugins/golang-filter/mcp-server/servers/rag/config"
 )
@@ -13,12 +15,27 @@ const (
 	// More providers can be added (e.g., Qwen)
 )
 
+// ChatMessage represents a message in a chat conversation
+type ChatMessage struct {
+	Role    string
+	Content string
+}
+
+// ChatResponse represents a response from a chat model
+type ChatResponse struct {
+	Content     string
+	TotalTokens int
+}
+
 // Provider defines interface for LLM providers with prompt-response pattern.
 // Extensible for future chat-style and streaming features.
 type Provider interface {
+
 	// Returns provider type for registration and lookup
 	GetProviderType() string
 
+	// Chat sends a chat message to the language model and gets a response
+	Chat(ctx context.Context, messages []ChatMessage) (*ChatResponse, error)
 	// Generates text response for given prompt
 	//
 	// ctx: For cancellation and timeout
@@ -50,4 +67,38 @@ func NewLLMProvider(cfg config.LLMConfig) (Provider, error) {
 		return nil, fmt.Errorf("no initializer found for llm provider type: %s", cfg.Provider)
 	}
 	return initializer.CreateProvider(cfg)
+}
+
+// RemoveThink removes content between various think tags
+// This function removes:
+// - <think>...</think>
+// - <thinking>...</thinking>
+// - [think]...[/think]
+// - [thinking]...[/thinking]
+func RemoveThink(content string) string {
+	if content == "" {
+		return content
+	}
+
+	// Remove <think>...</think> tags (case-insensitive, multiline)
+	re1 := regexp.MustCompile(`(?i)(?s)<think>.*?</think>`)
+	content = re1.ReplaceAllString(content, "")
+
+	// Remove <thinking>...</thinking> tags (case-insensitive, multiline)
+	re2 := regexp.MustCompile(`(?i)(?s)<thinking>.*?</thinking>`)
+	content = re2.ReplaceAllString(content, "")
+
+	// Remove [think]...[/think] tags (case-insensitive, multiline)
+	re3 := regexp.MustCompile(`(?i)(?s)\[think\].*?\[/think\]`)
+	content = re3.ReplaceAllString(content, "")
+
+	// Remove [thinking]...[/thinking] tags (case-insensitive, multiline)
+	re4 := regexp.MustCompile(`(?i)(?s)\[thinking\].*?\[/thinking\]`)
+	content = re4.ReplaceAllString(content, "")
+
+	// Clean up excessive newlines
+	re5 := regexp.MustCompile(`\n{3,}`)
+	content = re5.ReplaceAllString(content, "\n\n")
+
+	return strings.TrimSpace(content)
 }

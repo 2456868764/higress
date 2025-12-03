@@ -6,6 +6,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"sync"
+	"sync/atomic"
 
 	"github.com/alibaba/higress/plugins/golang-filter/mcp-server/servers/rag"
 	"github.com/alibaba/higress/plugins/golang-filter/mcp-server/servers/rag/config"
@@ -33,6 +35,19 @@ type RetrievalResult struct {
 	QuestionType  string          `json:"question_type"`
 	RetrievalList []RetrievalItem `json:"retrieval_list"`
 	GoldList      []interface{}   `json:"gold_list"`
+}
+
+// Task represents a single retrieval task
+type Task struct {
+	Index int
+	Data  QueryData
+}
+
+// TaskResult represents the result of a retrieval task
+type TaskResult struct {
+	Index  int
+	Result RetrievalResult
+	Error  error
 }
 
 // RetrieverOptions contains options for retrieval
@@ -94,12 +109,15 @@ func (r *Retriever) RetrieveWithDefaults(ctx context.Context, query string) ([]s
 // BatchRetrieval performs batch retrieval on query data, similar to Python's simple_retrieval.py
 // It reads queries from inputFile, performs retrieval with optional reranking,
 // and saves results to outputFile
+// workers: number of concurrent workers (0 or 1 means sequential processing)
 func BatchRetrieval(
 	ctx context.Context,
 	ragClient *rag.RAGClient,
 	cfg *config.Config,
 	inputFile string,
 	outputFile string,
+	maxQuery int,
+	workers int,
 ) error {
 	// 1. Load query data from JSON file
 	queryData, err := loadQueryData(inputFile)
@@ -108,12 +126,39 @@ func BatchRetrieval(
 	}
 
 	fmt.Printf("Loaded %d queries from %s\n", len(queryData), inputFile)
-	fmt.Println("Starting retrieval...")
+
+	// Filter queries based on maxQuery
+	if maxQuery > 0 && maxQuery < len(queryData) {
+		queryData = queryData[:maxQuery]
+		fmt.Printf("Limited to %d queries (max_query=%d)\n", len(queryData), maxQuery)
+	}
+
+	// Use sequential processing if workers <= 1
+	if workers <= 1 {
+		return batchRetrievalSequential(ctx, ragClient, cfg, queryData, outputFile)
+	}
+
+	// Use concurrent processing
+	return batchRetrievalConcurrent(ctx, ragClient, cfg, queryData, outputFile, workers)
+}
+
+// batchRetrievalSequential performs sequential batch retrieval
+func batchRetrievalSequential(
+	ctx context.Context,
+	ragClient *rag.RAGClient,
+	cfg *config.Config,
+	queryData []QueryData,
+	outputFile string,
+) error {
+	fmt.Println("Starting sequential retrieval...")
 	topK := cfg.RAG.TopK
 	threshold := cfg.RAG.Threshold
-	// 3. Process each query
 	retrievalSaveList := make([]RetrievalResult, 0, len(queryData))
+	const saveInterval = 10 // Save every 10 queries
+
 	for i, data := range queryData {
+		fmt.Printf("[BatchRetrieval] Processing query %d: %s\n", i+1, data.Query)
+		// Progress logging every 100 queries
 		if (i+1)%100 == 0 {
 			fmt.Printf("Processed %d/%d queries...\n", i+1, len(queryData))
 		}
@@ -121,7 +166,6 @@ func BatchRetrieval(
 		query := data.Query
 		// Perform retrieval (reranking is handled by SearchChunks based on config)
 		results, err := ragClient.SearchChunks(query, topK, threshold)
-		// fmt.Printf("search results count: %d\n", len(results))
 		if err != nil {
 			return fmt.Errorf("retrieval failed for query '%s': %w", query, err)
 		}
@@ -145,14 +189,184 @@ func BatchRetrieval(
 		}
 
 		retrievalSaveList = append(retrievalSaveList, save)
+
+		// Save every 10 queries to prevent data loss
+		if (i+1)%saveInterval == 0 {
+			if err := saveRetrievalResults(outputFile, retrievalSaveList); err != nil {
+				return fmt.Errorf("failed to save intermediate results at query %d: %w", i+1, err)
+			}
+			fmt.Printf("✓ Saved intermediate results: %d/%d queries processed\n", i+1, len(queryData))
+		}
 	}
 
-	// 5. Save results to JSON file
-	if err := saveRetrievalResults(outputFile, retrievalSaveList); err != nil {
-		return fmt.Errorf("failed to save results: %w", err)
+	// Final save: Save all remaining results to JSON file
+	if len(retrievalSaveList) > 0 {
+		if err := saveRetrievalResults(outputFile, retrievalSaveList); err != nil {
+			return fmt.Errorf("failed to save final results: %w", err)
+		}
+		fmt.Printf("✓ Final save completed. Total %d results saved to %s\n", len(retrievalSaveList), outputFile)
+	}
+	return nil
+}
+
+// batchRetrievalConcurrent performs concurrent batch retrieval using worker pool
+func batchRetrievalConcurrent(
+	ctx context.Context,
+	ragClient *rag.RAGClient,
+	cfg *config.Config,
+	queryData []QueryData,
+	outputFile string,
+	workers int,
+) error {
+	fmt.Printf("Starting concurrent retrieval with %d workers...\n", workers)
+	topK := cfg.RAG.TopK
+	threshold := cfg.RAG.Threshold
+	const saveInterval = 10 // Save every 10 queries
+
+	// Create channels
+	taskChan := make(chan Task, workers*2)
+	resultChan := make(chan TaskResult, workers*2)
+
+	// Track processed count atomically
+	var processedCount int64
+	var errorCount int64
+	totalQueries := len(queryData)
+
+	// Mutex for protecting resultMap
+	var mu sync.Mutex
+	resultMap := make(map[int]RetrievalResult) // Map to store results by index for ordering
+
+	// Start worker goroutines
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for task := range taskChan {
+				// Process retrieval
+				results, err := ragClient.SearchChunks(task.Data.Query, topK, threshold)
+				if err != nil {
+					atomic.AddInt64(&errorCount, 1)
+					resultChan <- TaskResult{
+						Index: task.Index,
+						Error: fmt.Errorf("retrieval failed for query '%s': %w", task.Data.Query, err),
+					}
+					atomic.AddInt64(&processedCount, 1)
+					continue
+				}
+
+				// Build retrieval list
+				retrievalList := make([]RetrievalItem, 0, len(results))
+				for _, result := range results {
+					retrievalList = append(retrievalList, RetrievalItem{
+						Text:  result.Document.Content,
+						Score: result.Score,
+					})
+				}
+
+				// Build save result
+				save := RetrievalResult{
+					Query:         task.Data.Query,
+					Answer:        task.Data.Answer,
+					QuestionType:  task.Data.QuestionType,
+					RetrievalList: retrievalList,
+					GoldList:      task.Data.EvidenceList,
+				}
+
+				resultChan <- TaskResult{
+					Index:  task.Index,
+					Result: save,
+				}
+				atomic.AddInt64(&processedCount, 1)
+
+				// Progress logging
+				count := atomic.LoadInt64(&processedCount)
+				if count%100 == 0 {
+					fmt.Printf("[Worker %d] Processed %d/%d queries...\n", workerID, count, totalQueries)
+				}
+			}
+		}(i)
 	}
 
-	fmt.Printf("Retrieval completed. Saved %d results to %s\n", len(retrievalSaveList), outputFile)
+	// Start result collector goroutine
+	var collectorWg sync.WaitGroup
+	collectorWg.Add(1)
+	go func() {
+		defer collectorWg.Done()
+		for result := range resultChan {
+			if result.Error != nil {
+				fmt.Printf("[BatchRetrieval] Error processing query %d: %v\n", result.Index+1, result.Error)
+				continue
+			}
+
+			mu.Lock()
+			resultMap[result.Index] = result.Result
+			currentCount := len(resultMap)
+			mu.Unlock()
+
+			// Save every saveInterval results
+			if currentCount%saveInterval == 0 {
+				mu.Lock()
+				// Build ordered list from map
+				orderedList := make([]RetrievalResult, 0, currentCount)
+				for i := 0; i < totalQueries; i++ {
+					if result, ok := resultMap[i]; ok {
+						orderedList = append(orderedList, result)
+					}
+				}
+				mu.Unlock()
+
+				if len(orderedList) > 0 {
+					if err := saveRetrievalResults(outputFile, orderedList); err != nil {
+						fmt.Printf("[BatchRetrieval] Failed to save intermediate results: %v\n", err)
+					} else {
+						count := atomic.LoadInt64(&processedCount)
+						fmt.Printf("✓ Saved intermediate results: %d results (processed %d/%d queries)\n", len(orderedList), count, totalQueries)
+					}
+				}
+			}
+		}
+	}()
+
+	// Send tasks to workers
+	for i, data := range queryData {
+		taskChan <- Task{
+			Index: i,
+			Data:  data,
+		}
+		fmt.Printf("[BatchRetrieval] Queued query %d: %s\n", i+1, data.Query)
+	}
+	close(taskChan)
+
+	// Wait for all workers to complete
+	wg.Wait()
+	close(resultChan)
+
+	// Wait for collector to finish
+	collectorWg.Wait()
+
+	// Final save: Save all remaining results
+	mu.Lock()
+	orderedList := make([]RetrievalResult, 0, len(resultMap))
+	for i := 0; i < totalQueries; i++ {
+		if result, ok := resultMap[i]; ok {
+			orderedList = append(orderedList, result)
+		}
+	}
+	mu.Unlock()
+
+	if len(orderedList) > 0 {
+		if err := saveRetrievalResults(outputFile, orderedList); err != nil {
+			return fmt.Errorf("failed to save final results: %w", err)
+		}
+		fmt.Printf("✓ Final save completed. Total %d results saved to %s\n", len(orderedList), outputFile)
+	}
+
+	errors := atomic.LoadInt64(&errorCount)
+	if errors > 0 {
+		fmt.Printf("Warning: %d queries failed during processing\n", errors)
+	}
+
 	return nil
 }
 
@@ -203,14 +417,16 @@ func main() {
 	// Define command line flags
 	var (
 		inputFile    = flag.String("input", "/Users/jun/GolandProjects/higress/higress/plugins/golang-filter/mcp-server/servers/rag/python/dataset/MultiHopRAG.json", "Input JSON file containing queries")
-		outputFile   = flag.String("output", "output/retrieval_hybrid_re_500.json", "Output JSON file for retrieval results")
-		agent        = flag.String("agent", "default", "rag agent type: default, chain_of_rag, router")
+		outputFile   = flag.String("output", "output/retrieval_MultiHopRAG_01_500.json", "Output JSON file for retrieval results")
+		agent        = flag.String("agent", "default", "rag agent type: default, chain_of_rag, deep_search, router")
 		topK         = flag.Int("topk", 10, "Number of top results to return")
 		threshold    = flag.Float64("threshold", 0.0, "Score threshold for filtering")
 		rerank       = flag.Bool("rerank", false, "Enable reranking")
+		maxQuery     = flag.Int("max_query", 0, "max query to excute, 0 means no limit")
+		workers      = flag.Int("workers", 1, "Number of concurrent workers (0 or 1 means sequential processing)")
 		collection   = flag.String("collection", "corpus_collection_500", "collection name")
 		rerankTopK   = flag.Int("rerank_topk", 20, "Number of candidates to retrieve before reranking")
-		hybridSearch = flag.Bool("hybrid_search", true, "Enable hybrid search")
+		hybridSearch = flag.Bool("hybrid_search", false, "Enable hybrid search")
 	)
 
 	flag.Parse()
@@ -250,11 +466,18 @@ func main() {
 			Agent:      *agent,
 		},
 
+		// LLM: config.LLMConfig{
+		// 	Provider: "openai",
+		// 	APIKey:   getEnvOrDefault("OPENAI_API_KEY", "sk-xxx"),
+		// 	BaseURL:  getEnvOrDefault("OPENAI_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+		// 	Model:    "qwen-plus",
+		// },
+
 		LLM: config.LLMConfig{
 			Provider: "openai",
 			APIKey:   getEnvOrDefault("OPENAI_API_KEY", "sk-xxx"),
-			BaseURL:  getEnvOrDefault("OPENAI_BASE_URL", "http://localhost:8090/v1"),
-			Model:    "gpt-4o",
+			BaseURL:  getEnvOrDefault("OPENAI_BASE_URL", "https://api.deepseek.com"),
+			Model:    "deepseek-reasoner",
 		},
 		Reranker: config.RerankerConfig{
 			BaseURL:   getEnvOrDefault("RERANKER_BASE_URL", "http://localhost:8090/v1"),
@@ -351,6 +574,8 @@ func main() {
 	fmt.Printf("  Agent: %s\n", *agent)
 	fmt.Printf("  Input file: %s\n", *inputFile)
 	fmt.Printf("  Output file: %s\n", *outputFile)
+	fmt.Printf("  Max query: %d\n", *maxQuery)
+	fmt.Printf("  Workers: %d\n", *workers)
 	fmt.Printf("  TopK: %d\n", *topK)
 	fmt.Printf("  Threshold: %.2f\n", *threshold)
 	fmt.Printf("  Rerank: %v\n", *rerank)
@@ -359,7 +584,7 @@ func main() {
 	fmt.Printf("  Collection: %s\n", *collection)
 	fmt.Println()
 
-	if err := BatchRetrieval(ctx, ragClient, cfg, *inputFile, *outputFile); err != nil {
+	if err := BatchRetrieval(ctx, ragClient, cfg, *inputFile, *outputFile, *maxQuery, *workers); err != nil {
 		fmt.Fprintf(os.Stderr, "Batch retrieval failed: %v\n", err)
 		os.Exit(1)
 	}

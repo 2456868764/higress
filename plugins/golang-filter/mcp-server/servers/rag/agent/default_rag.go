@@ -85,6 +85,9 @@ func (d *DefaultRAG) Invoke(ctx context.Context, query string, kwargs map[string
 // This implements the RAGAgent interface.
 // It performs vector search (with optional hybrid search and reranking) and returns retrieval results.
 func (d *DefaultRAG) Retrieve(ctx context.Context, query string, kwargs map[string]interface{}) ([]RetrievalResult, int, map[string]interface{}, error) {
+	fmt.Printf("[DefaultRAG] ===== Starting Retrieve Phase =====\n")
+	fmt.Printf("[DefaultRAG] Query: %s\n", query)
+
 	// Get topK and threshold from kwargs if provided, otherwise use config defaults
 	topK := d.config.TopK
 	threshold := d.config.Threshold
@@ -98,11 +101,16 @@ func (d *DefaultRAG) Retrieve(ctx context.Context, query string, kwargs map[stri
 		}
 	}
 
+	fmt.Printf("[DefaultRAG] Step 1: Getting query embedding...\n")
+	fmt.Printf("[DefaultRAG]   TopK: %d, Threshold: %.2f\n", topK, threshold)
+
 	// Get embedding for the query
 	queryVector, err := d.embeddingModel.GetEmbedding(ctx, query)
 	if err != nil {
+		fmt.Printf("[DefaultRAG]   ERROR: Failed to get embedding: %v\n", err)
 		return nil, 0, nil, fmt.Errorf("failed to get embedding: %w", err)
 	}
+	fmt.Printf("[DefaultRAG]   Query embedding obtained (dimension: %d)\n", len(queryVector))
 
 	// Determine search topK based on reranking configuration
 	useRerank := d.config.Rerank && d.rerankerClient != nil
@@ -116,8 +124,10 @@ func (d *DefaultRAG) Retrieve(ctx context.Context, query string, kwargs map[stri
 		if searchTopK < topK {
 			searchTopK = topK * 2
 		}
+		fmt.Printf("[DefaultRAG]   Reranking enabled: SearchTopK=%d (will rerank to TopK=%d)\n", searchTopK, topK)
 	} else {
 		searchTopK = topK
+		fmt.Printf("[DefaultRAG]   Reranking disabled: SearchTopK=%d\n", searchTopK)
 	}
 
 	// Build search options
@@ -127,28 +137,37 @@ func (d *DefaultRAG) Retrieve(ctx context.Context, query string, kwargs map[stri
 	}
 
 	// Perform search (hybrid or standard)
+	fmt.Printf("[DefaultRAG] Step 2: Performing vector search...\n")
+	fmt.Printf("[DefaultRAG]   Search mode: %s\n", map[bool]string{true: "Hybrid Search", false: "Standard Search"}[d.config.HybridSearch])
+
 	var searchResults []schema.SearchResult
 	if d.config.HybridSearch {
 		searchResults, err = d.vectorDB.SearchHybridDocs(ctx, query, queryVector, options)
 		if err != nil {
+			fmt.Printf("[DefaultRAG]   ERROR: Hybrid search failed: %v\n", err)
 			return nil, 0, nil, fmt.Errorf("hybrid search failed: %w", err)
 		}
 	} else {
 		searchResults, err = d.vectorDB.SearchDocs(ctx, query, queryVector, options)
 		if err != nil {
+			fmt.Printf("[DefaultRAG]   ERROR: Search failed: %v\n", err)
 			return nil, 0, nil, fmt.Errorf("search failed: %w", err)
 		}
 	}
+	fmt.Printf("[DefaultRAG]   Retrieved %d documents from vector DB\n", len(searchResults))
 
 	// Apply reranking if enabled
 	if useRerank {
+		fmt.Printf("[DefaultRAG] Step 3: Applying reranking...\n")
 		rerankThreshold := threshold
 		// Note: We don't have access to reranker config threshold here,
 		// so we use the provided threshold
 		searchResults, err = d.rerankerClient.RerankSearchResults(ctx, query, searchResults, topK, rerankThreshold)
 		if err != nil {
+			fmt.Printf("[DefaultRAG]   ERROR: Rerank failed: %v\n", err)
 			return nil, 0, nil, fmt.Errorf("rerank failed: %w", err)
 		}
+		fmt.Printf("[DefaultRAG]   Reranked to %d documents\n", len(searchResults))
 	}
 
 	// Convert search results to RetrievalResult
@@ -160,6 +179,12 @@ func (d *DefaultRAG) Retrieve(ctx context.Context, query string, kwargs map[stri
 			Document: result.Document,
 			Metadata: result.Document.Metadata,
 		})
+	}
+
+	fmt.Printf("[DefaultRAG] Step 4: Finalizing results...\n")
+	fmt.Printf("[DefaultRAG]   Final retrieval results: %d documents\n", len(retrievalResults))
+	if len(retrievalResults) > 0 {
+		fmt.Printf("[DefaultRAG]   Top score: %.4f\n", retrievalResults[0].Score)
 	}
 
 	// Token usage: only embedding tokens (LLM not used in retrieval)
@@ -174,6 +199,7 @@ func (d *DefaultRAG) Retrieve(ctx context.Context, query string, kwargs map[stri
 		"rerank":    useRerank,
 	}
 
+	fmt.Printf("[DefaultRAG] ===== Retrieve Phase Completed =====\n\n")
 	return retrievalResults, tokenUsage, metadata, nil
 }
 
@@ -181,35 +207,56 @@ func (d *DefaultRAG) Retrieve(ctx context.Context, query string, kwargs map[stri
 // This implements the RAGAgent interface.
 // It performs retrieval and then generates an answer using the LLM.
 func (d *DefaultRAG) Query(ctx context.Context, query string, kwargs map[string]interface{}) (string, []RetrievalResult, int, error) {
+	fmt.Printf("[DefaultRAG] ===== Starting Query Phase =====\n")
+	fmt.Printf("[DefaultRAG] Query: %s\n", query)
+
 	// Retrieve relevant documents
 	retrievalResults, nTokenRetrieval, _, err := d.Retrieve(ctx, query, kwargs)
 	if err != nil {
+		fmt.Printf("[DefaultRAG] ERROR: Retrieve failed: %v\n", err)
 		return "", nil, 0, err
 	}
 
+	fmt.Printf("[DefaultRAG] Step 5: Building context from retrieved documents...\n")
+	fmt.Printf("[DefaultRAG]   Retrieved documents: %d\n", len(retrievalResults))
+	fmt.Printf("[DefaultRAG]   Retrieval tokens used: %d\n", nTokenRetrieval)
+
 	// Build context from retrieved documents
 	contexts := make([]string, 0, len(retrievalResults))
+	totalContextLength := 0
 	for _, result := range retrievalResults {
 		// Clean up the text (replace newlines with spaces for better formatting)
 		cleanedText := strings.ReplaceAll(result.Text, "\n", " ")
 		contexts = append(contexts, cleanedText)
+		totalContextLength += len(cleanedText)
 	}
+	fmt.Printf("[DefaultRAG]   Total context length: %d characters\n", totalContextLength)
 
 	// Build prompt using LLM's BuildPrompt function
+	fmt.Printf("[DefaultRAG] Step 6: Building prompt and generating answer...\n")
 	prompt := llm.BuildPrompt(query, contexts, "\n\n")
+	promptLength := len(prompt)
+	fmt.Printf("[DefaultRAG]   Prompt length: %d characters\n", promptLength)
 
 	// Generate answer using LLM
 	answer, err := d.llm.GenerateCompletion(ctx, prompt)
 	if err != nil {
+		fmt.Printf("[DefaultRAG]   ERROR: Failed to generate completion: %v\n", err)
 		return "", nil, 0, fmt.Errorf("failed to generate completion: %w", err)
 	}
+
+	answerLength := len(answer)
+	fmt.Printf("[DefaultRAG]   Answer generated (length: %d characters)\n", answerLength)
 
 	// Estimate token usage for LLM generation
 	// Rough approximation: 1 token ≈ 4 characters
 	// This is a simple estimation; actual token counts depend on the tokenizer
-	promptTokens := len(prompt) / 4
-	answerTokens := len(answer) / 4
+	promptTokens := promptLength / 4
+	answerTokens := answerLength / 4
 	totalTokens := nTokenRetrieval + promptTokens + answerTokens
+
+	fmt.Printf("[DefaultRAG]   Estimated tokens - Prompt: %d, Answer: %d, Total: %d\n", promptTokens, answerTokens, totalTokens)
+	fmt.Printf("[DefaultRAG] ===== Query Phase Completed =====\n\n")
 
 	return strings.TrimSpace(answer), retrievalResults, totalTokens, nil
 }

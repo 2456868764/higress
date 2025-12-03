@@ -239,6 +239,10 @@ def index_corpus_to_milvus(
                     # split the documents into smaller chunks
                     smaller_documents = []
                     for doc in documents:
+                        if len(doc.page_content) < smaller_chunk_size:
+                            logger.warning(f"Skipping document with content length less than {smaller_chunk_size}: {title}")
+                            continue
+
                         smaller_chunks = split_text(doc.page_content, chunk_size=smaller_chunk_size, chunk_overlap=0)
                         if smaller_chunks:
                             for smaller_chunk in smaller_chunks:
@@ -252,6 +256,7 @@ def index_corpus_to_milvus(
                                 )
                                 smaller_doc_infos = vector_store.add_doc(smaller_corpus_file, smaller_documents)
                                 total_chunks += len(smaller_documents)
+                                logger.debug(f"Added {len(smaller_documents)} smaller chunks for document: {title}, total chunks: {total_chunks}")
                 
                 logger.debug(
                     f"Indexed document '{title}': "

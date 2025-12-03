@@ -123,6 +123,7 @@ func (r *RAGClient) createRAGAgent() (agent.RAGAgent, error) {
 
 // createDefaultRAG creates a DefaultRAG agent
 func (r *RAGClient) createDefaultRAG(config *agent.DefaultRAGConfig) (agent.RAGAgent, error) {
+	fmt.Printf("createDefaultRAG: %+v\n", config)
 	if r.llmProvider == nil {
 		return nil, fmt.Errorf("llm provider is required for DefaultRAG agent")
 	}
@@ -138,6 +139,7 @@ func (r *RAGClient) createDefaultRAG(config *agent.DefaultRAGConfig) (agent.RAGA
 
 // createChainOfRAG creates a ChainOfRAG agent
 func (r *RAGClient) createChainOfRAG(config *agent.DefaultRAGConfig) (agent.RAGAgent, error) {
+	fmt.Printf("createChainOfRAG: %+v\n", config)
 	if r.llmProvider == nil {
 		return nil, fmt.Errorf("llm provider is required for ChainOfRAG agent")
 	}
@@ -161,6 +163,7 @@ func (r *RAGClient) createChainOfRAG(config *agent.DefaultRAGConfig) (agent.RAGA
 
 // createRouterRAG creates a RAGRouter agent that routes queries to appropriate agents
 func (r *RAGClient) createRouterRAG(config *agent.DefaultRAGConfig) (agent.RAGAgent, error) {
+	fmt.Printf("createRouterRAG: %+v\n", config)
 	if r.llmProvider == nil {
 		return nil, fmt.Errorf("llm provider is required for RAGRouter agent")
 	}

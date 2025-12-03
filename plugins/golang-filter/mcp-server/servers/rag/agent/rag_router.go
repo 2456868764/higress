@@ -78,10 +78,15 @@ type DescribableAgent interface {
 // route selects the most appropriate agent for the given query
 // Returns the selected agent and the number of tokens used for routing
 func (r *RAGRouter) route(ctx context.Context, query string) (RAGAgent, int, error) {
+	fmt.Printf("[RAGRouter] ===== Starting Routing =====\n")
+	fmt.Printf("[RAGRouter] Query: %s\n", query)
+	fmt.Printf("[RAGRouter] Available agents: %d\n", len(r.ragAgents))
+
 	// Build description string
 	descriptionLines := make([]string, len(r.agentDescriptions))
 	for i, desc := range r.agentDescriptions {
 		descriptionLines[i] = fmt.Sprintf("[%d]: %s", i+1, desc)
+		fmt.Printf("[RAGRouter]   Agent [%d]: %s\n", i+1, desc)
 	}
 	descriptionStr := strings.Join(descriptionLines, "\n")
 
@@ -89,32 +94,43 @@ func (r *RAGRouter) route(ctx context.Context, query string) (RAGAgent, int, err
 	prompt := fmt.Sprintf(ragRouterPrompt, query, descriptionStr)
 
 	// Call LLM to select agent
+	fmt.Printf("[RAGRouter] Step 1: Routing query to appropriate agent...\n")
 	response, err := r.llm.Chat(ctx, []llm.ChatMessage{
 		{Role: "user", Content: prompt},
 	})
 	if err != nil {
+		fmt.Printf("[RAGRouter]   ERROR: Failed to route query: %v\n", err)
 		return nil, 0, fmt.Errorf("failed to route query: %w", err)
 	}
+
+	fmt.Printf("[RAGRouter]   LLM response: %s\n", response.Content)
+	fmt.Printf("[RAGRouter]   Routing tokens used: %d\n", response.TotalTokens)
 
 	// Parse response to get agent index
 	// Note: RemoveThink is already called in llm.Provider.Chat
 	content := response.Content
 	selectedAgentIndex, err := r.parseAgentIndex(content)
 	if err != nil {
+		fmt.Printf("[RAGRouter]   WARNING: Failed to parse agent index, trying fallback...\n")
 		// Fallback: try to find the last digit
 		lastDigit, findErr := r.findLastDigit(content)
 		if findErr != nil {
+			fmt.Printf("[RAGRouter]   ERROR: Failed to find digit in response: %v\n", findErr)
 			return nil, 0, fmt.Errorf("failed to parse agent index from response '%s': %w", content, err)
 		}
 		selectedAgentIndex = lastDigit - 1
+		fmt.Printf("[RAGRouter]   Using fallback: selected agent index %d\n", selectedAgentIndex+1)
 	}
 
 	// Validate index
 	if selectedAgentIndex < 0 || selectedAgentIndex >= len(r.ragAgents) {
+		fmt.Printf("[RAGRouter]   ERROR: Invalid agent index %d (must be between 1 and %d)\n", selectedAgentIndex+1, len(r.ragAgents))
 		return nil, 0, fmt.Errorf("invalid agent index %d (must be between 1 and %d)", selectedAgentIndex+1, len(r.ragAgents))
 	}
 
 	selectedAgent := r.ragAgents[selectedAgentIndex]
+	fmt.Printf("[RAGRouter]   ✓ Selected agent [%d]: %T\n", selectedAgentIndex+1, selectedAgent)
+	fmt.Printf("[RAGRouter] ===== Routing Completed =====\n\n")
 	return selectedAgent, response.TotalTokens, nil
 }
 
@@ -162,15 +178,25 @@ func (r *RAGRouter) Invoke(ctx context.Context, query string, kwargs map[string]
 // Retrieve retrieves relevant documents from the knowledge base based on the query.
 // This implements the RAGAgent interface.
 func (r *RAGRouter) Retrieve(ctx context.Context, query string, kwargs map[string]interface{}) ([]RetrievalResult, int, map[string]interface{}, error) {
+	fmt.Printf("[RAGRouter] ===== Starting Retrieve Phase =====\n")
+	fmt.Printf("[RAGRouter] Query: %s\n", query)
+
 	agent, nTokenRouter, err := r.route(ctx, query)
 	if err != nil {
+		fmt.Printf("[RAGRouter] ERROR: Routing failed: %v\n", err)
 		return nil, 0, nil, err
 	}
 
+	fmt.Printf("[RAGRouter] Step 2: Delegating retrieval to selected agent...\n")
 	retrievedResults, nTokenRetrieval, metadata, err := agent.Retrieve(ctx, query, kwargs)
 	if err != nil {
+		fmt.Printf("[RAGRouter] ERROR: Agent retrieval failed: %v\n", err)
 		return nil, 0, nil, err
 	}
+
+	fmt.Printf("[RAGRouter] Step 3: Finalizing retrieval results...\n")
+	fmt.Printf("[RAGRouter]   Retrieved documents: %d\n", len(retrievedResults))
+	fmt.Printf("[RAGRouter]   Routing tokens: %d, Retrieval tokens: %d, Total: %d\n", nTokenRouter, nTokenRetrieval, nTokenRouter+nTokenRetrieval)
 
 	// Add routing metadata
 	if metadata == nil {
@@ -179,22 +205,35 @@ func (r *RAGRouter) Retrieve(ctx context.Context, query string, kwargs map[strin
 	metadata["routing_tokens"] = nTokenRouter
 	metadata["selected_agent"] = fmt.Sprintf("%T", agent)
 
+	fmt.Printf("[RAGRouter] ===== Retrieve Phase Completed =====\n\n")
 	return retrievedResults, nTokenRouter + nTokenRetrieval, metadata, nil
 }
 
 // Query executes a query and returns the final answer along with retrieved results.
 // This implements the RAGAgent interface.
 func (r *RAGRouter) Query(ctx context.Context, query string, kwargs map[string]interface{}) (string, []RetrievalResult, int, error) {
+	fmt.Printf("[RAGRouter] ===== Starting Query Phase =====\n")
+	fmt.Printf("[RAGRouter] Query: %s\n", query)
+
 	agent, nTokenRouter, err := r.route(ctx, query)
 	if err != nil {
+		fmt.Printf("[RAGRouter] ERROR: Routing failed: %v\n", err)
 		return "", nil, 0, err
 	}
 
+	fmt.Printf("[RAGRouter] Step 2: Delegating query to selected agent...\n")
 	answer, retrievedResults, nTokenRetrieval, err := agent.Query(ctx, query, kwargs)
 	if err != nil {
+		fmt.Printf("[RAGRouter] ERROR: Agent query failed: %v\n", err)
 		return "", nil, 0, err
 	}
 
+	fmt.Printf("[RAGRouter] Step 3: Finalizing query results...\n")
+	fmt.Printf("[RAGRouter]   Answer length: %d characters\n", len(answer))
+	fmt.Printf("[RAGRouter]   Retrieved documents: %d\n", len(retrievedResults))
+	fmt.Printf("[RAGRouter]   Routing tokens: %d, Query tokens: %d, Total: %d\n", nTokenRouter, nTokenRetrieval, nTokenRouter+nTokenRetrieval)
+
+	fmt.Printf("[RAGRouter] ===== Query Phase Completed =====\n\n")
 	return answer, retrievedResults, nTokenRouter + nTokenRetrieval, nil
 }
 

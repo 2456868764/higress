@@ -39,7 +39,7 @@ def query_bot(
             model_name,
             messages,
             temperature=0.3,
-            max_new_tokens=512,
+            max_new_tokens=2048,
             **kwargs,
     ):
         try:
@@ -117,10 +117,10 @@ def main():
                         help='Model name (or set OPENAI_MODEL env var, default: gpt-4o)')
     parser.add_argument('--temperature', type=float, default=0.3,
                         help='Temperature for generation (default: 0.3)')
-    parser.add_argument('--max-tokens', type=int, default=1024,
+    parser.add_argument('--max-tokens', type=int, default=2048,
                         help='Maximum tokens to generate (default: 1024)')
-    parser.add_argument('--max-workers', type=int, default=4,
-                        help='Maximum number of concurrent workers (default: 10)')
+    parser.add_argument('--max-workers', type=int, default=5,
+                        help='Maximum number of concurrent workers (default: 5)')
     
     args = parser.parse_args()
     

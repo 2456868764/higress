@@ -143,6 +143,11 @@ func NewChainOfRAG(
 
 // reflectGetSubquery generates a follow-up query based on intermediate context
 func (c *ChainOfRAG) reflectGetSubquery(ctx context.Context, query string, intermediateContext []string) (string, int, error) {
+	fmt.Printf("[ChainOfRAG] Step 1: Generating follow-up query...\n")
+	if len(intermediateContext) > 0 {
+		fmt.Printf("[ChainOfRAG]   Previous intermediate contexts: %d\n", len(intermediateContext))
+	}
+
 	contextStr := strings.Join(intermediateContext, "\n")
 	prompt := fmt.Sprintf(followupQueryPrompt, contextStr, query)
 
@@ -150,28 +155,46 @@ func (c *ChainOfRAG) reflectGetSubquery(ctx context.Context, query string, inter
 		{Role: "user", Content: prompt},
 	})
 	if err != nil {
+		fmt.Printf("[ChainOfRAG]   ERROR: Failed to generate follow-up query: %v\n", err)
 		return "", 0, err
 	}
 
+	fmt.Printf("[ChainOfRAG]   Generated follow-up query: %s\n", response.Content)
+	fmt.Printf("[ChainOfRAG]   Tokens used: %d\n", response.TotalTokens)
 	return response.Content, response.TotalTokens, nil
 }
 
 // retrieveAndAnswer retrieves documents and generates an intermediate answer
 func (c *ChainOfRAG) retrieveAndAnswer(ctx context.Context, query string, topK int, threshold float64) (string, []RetrievalResult, int, error) {
+	fmt.Printf("[ChainOfRAG] Step 2: Retrieving documents and generating intermediate answer...\n")
+	fmt.Printf("[ChainOfRAG]   Query: %s\n", query)
+	fmt.Printf("[ChainOfRAG]   TopK: %d, Threshold: %.2f\n", topK, threshold)
+
 	queryVector, err := c.embeddingModel.GetEmbedding(ctx, query)
 	if err != nil {
+		fmt.Printf("[ChainOfRAG]   ERROR: Failed to get embedding: %v\n", err)
 		return "", nil, 0, fmt.Errorf("failed to get embedding: %w", err)
 	}
 
 	searchOptions := &schema.SearchOptions{
+		// TopK:      int(1.5 * float64(topK)), // Retrieve more documents to increase the chance of finding relevant documents
 		TopK:      topK,
 		Threshold: threshold,
 	}
 
-	searchResults, err := c.vectorDB.SearchDocs(ctx, query, queryVector, searchOptions)
+	var searchResults []schema.SearchResult
+	if c.config.HybridSearch {
+		searchResults, err = c.vectorDB.SearchHybridDocs(ctx, query, queryVector, searchOptions)
+	} else {
+		searchResults, err = c.vectorDB.SearchDocs(ctx, query, queryVector, searchOptions)
+	}
+
 	if err != nil {
+		fmt.Printf("[ChainOfRAG]   ERROR: Search failed: %v\n", err)
 		return "", nil, 0, fmt.Errorf("search failed: %w", err)
 	}
+
+	fmt.Printf("[ChainOfRAG]   Retrieved %d documents from vector DB\n", len(searchResults))
 
 	allRetrievedResults := make([]RetrievalResult, 0)
 	for _, result := range searchResults {
@@ -184,6 +207,7 @@ func (c *ChainOfRAG) retrieveAndAnswer(ctx context.Context, query string, topK i
 	}
 
 	allRetrievedResults = deduplicateResults(allRetrievedResults)
+	fmt.Printf("[ChainOfRAG]   After deduplication: %d documents\n", len(allRetrievedResults))
 
 	formattedDocs := c.formatRetrievedResults(allRetrievedResults)
 	prompt := fmt.Sprintf(intermediateAnswerPrompt, formattedDocs, query)
@@ -192,9 +216,12 @@ func (c *ChainOfRAG) retrieveAndAnswer(ctx context.Context, query string, topK i
 		{Role: "user", Content: prompt},
 	})
 	if err != nil {
+		fmt.Printf("[ChainOfRAG]   ERROR: Failed to generate intermediate answer: %v\n", err)
 		return "", nil, 0, err
 	}
 
+	fmt.Printf("[ChainOfRAG]   Intermediate answer: %s\n", response.Content)
+	fmt.Printf("[ChainOfRAG]   Tokens used: %d\n", response.TotalTokens)
 	return response.Content, allRetrievedResults, response.TotalTokens, nil
 }
 
@@ -205,7 +232,11 @@ func (c *ChainOfRAG) getSupportedDocs(
 	query string,
 	intermediateAnswer string,
 ) ([]RetrievalResult, int, error) {
+	fmt.Printf("[ChainOfRAG] Step 3: Filtering supported documents...\n")
+	fmt.Printf("[ChainOfRAG]   Input documents: %d\n", len(retrievedResults))
+
 	if strings.Contains(intermediateAnswer, "No relevant information found") {
+		fmt.Printf("[ChainOfRAG]   No relevant information found, skipping filtering\n")
 		return []RetrievalResult{}, 0, nil
 	}
 
@@ -216,13 +247,17 @@ func (c *ChainOfRAG) getSupportedDocs(
 		{Role: "user", Content: prompt},
 	})
 	if err != nil {
+		fmt.Printf("[ChainOfRAG]   ERROR: Failed to filter documents: %v\n", err)
 		return nil, 0, err
 	}
 
 	supportedIndices, err := LiteralEval(response.Content)
 	if err != nil {
+		fmt.Printf("[ChainOfRAG]   ERROR: Failed to parse supported indices: %v\n", err)
 		return nil, 0, err
 	}
+
+	fmt.Printf("[ChainOfRAG]   Selected document indices: %v\n", supportedIndices)
 
 	supportedResults := make([]RetrievalResult, 0)
 	for _, idx := range supportedIndices {
@@ -231,12 +266,18 @@ func (c *ChainOfRAG) getSupportedDocs(
 		}
 	}
 
+	fmt.Printf("[ChainOfRAG]   Filtered to %d supported documents\n", len(supportedResults))
+	fmt.Printf("[ChainOfRAG]   Tokens used: %d\n", response.TotalTokens)
 	return supportedResults, response.TotalTokens, nil
 }
 
 // checkHasEnoughInfo checks if there's enough information to answer the query
 func (c *ChainOfRAG) checkHasEnoughInfo(ctx context.Context, query string, intermediateContexts []string) (bool, int, error) {
+	fmt.Printf("[ChainOfRAG] Step 4: Checking if enough information gathered...\n")
+	fmt.Printf("[ChainOfRAG]   Intermediate contexts: %d\n", len(intermediateContexts))
+
 	if len(intermediateContexts) == 0 {
+		fmt.Printf("[ChainOfRAG]   No intermediate contexts, need more information\n")
 		return false, 0, nil
 	}
 
@@ -247,11 +288,14 @@ func (c *ChainOfRAG) checkHasEnoughInfo(ctx context.Context, query string, inter
 		{Role: "user", Content: prompt},
 	})
 	if err != nil {
+		fmt.Printf("[ChainOfRAG]   ERROR: Failed to check information: %v\n", err)
 		return false, 0, err
 	}
 
 	content := strings.ToLower(strings.TrimSpace(response.Content))
 	hasEnoughInfo := content == "yes"
+	fmt.Printf("[ChainOfRAG]   Reflection result: %s (hasEnoughInfo: %v)\n", response.Content, hasEnoughInfo)
+	fmt.Printf("[ChainOfRAG]   Tokens used: %d\n", response.TotalTokens)
 	return hasEnoughInfo, response.TotalTokens, nil
 }
 
@@ -288,24 +332,39 @@ func (c *ChainOfRAG) Retrieve(ctx context.Context, query string, kwargs map[stri
 		}
 	}
 
+	fmt.Printf("[ChainOfRAG] ===== Starting Retrieve Phase =====\n")
+	fmt.Printf("[ChainOfRAG] Original query: %s\n", query)
+	fmt.Printf("[ChainOfRAG] Max iterations: %d, Early stopping: %v\n", iterations, c.earlyStopping)
+	fmt.Printf("[ChainOfRAG] TopK: %d, Threshold: %.2f\n", topK, threshold)
+
 	intermediateContexts := make([]string, 0)
 	allRetrievedResults := make([]RetrievalResult, 0)
 	tokenUsage := 0
 
+	fallback := false
+
 	for iter := 0; iter < iterations; iter++ {
+		fmt.Printf("\n[ChainOfRAG] --- Iteration %d/%d ---\n", iter+1, iterations)
+
 		followupQuery, nToken0, err := c.reflectGetSubquery(ctx, query, intermediateContexts)
 		if err != nil {
-			return nil, 0, nil, err
+			fallback = true
+			fmt.Printf("[ChainOfRAG]   ERROR: Failed to generate follow-up query: %v\n", err)
+			break
 		}
 
 		intermediateAnswer, retrievedResults, nToken1, err := c.retrieveAndAnswer(ctx, followupQuery, topK, threshold)
 		if err != nil {
-			return nil, 0, nil, err
+			fallback = true
+			fmt.Printf("[ChainOfRAG]   ERROR: Failed to retrieve and answer: %v\n", err)
+			break
 		}
 
 		supportedRetrievedResults, nToken2, err := c.getSupportedDocs(ctx, retrievedResults, followupQuery, intermediateAnswer)
 		if err != nil {
-			return nil, 0, nil, err
+			fallback = true
+			fmt.Printf("[ChainOfRAG]   ERROR: Failed to filter supported documents: %v\n", err)
+			break
 		}
 
 		allRetrievedResults = append(allRetrievedResults, supportedRetrievedResults...)
@@ -314,23 +373,89 @@ func (c *ChainOfRAG) Retrieve(ctx context.Context, query string, kwargs map[stri
 			fmt.Sprintf("Intermediate query%d: %s\nIntermediate answer%d: %s", intermediateIdx, followupQuery, intermediateIdx, intermediateAnswer))
 		tokenUsage += nToken0 + nToken1 + nToken2
 
+		fmt.Printf("[ChainOfRAG]   Accumulated documents: %d\n", len(allRetrievedResults))
+		fmt.Printf("[ChainOfRAG]   Accumulated intermediate contexts: %d\n", len(intermediateContexts))
+		fmt.Printf("[ChainOfRAG]   Total tokens used so far: %d\n", tokenUsage)
+
 		if c.earlyStopping {
 			hasEnoughInfo, nTokenCheck, err := c.checkHasEnoughInfo(ctx, query, intermediateContexts)
 			if err != nil {
-				return nil, 0, nil, err
+				fallback = true
+				fmt.Printf("[ChainOfRAG]   ERROR: Failed to check if enough information gathered: %v\n", err)
+				break
 			}
 			tokenUsage += nTokenCheck
 
 			if hasEnoughInfo {
+				fmt.Printf("[ChainOfRAG]   ✓ Early stopping: Enough information gathered\n")
 				break
 			}
 		}
 	}
 
+	fmt.Printf("\n[ChainOfRAG] --- Final Processing ---\n")
 	allRetrievedResults = deduplicateResults(allRetrievedResults)
+	fmt.Printf("[ChainOfRAG] Final deduplicated documents: %d\n", len(allRetrievedResults))
+	fmt.Printf("[ChainOfRAG] Total iterations completed: %d\n", len(intermediateContexts))
+	fmt.Printf("[ChainOfRAG] Total tokens used: %d\n", tokenUsage)
+
+	// Fallback: If no results found through iterative retrieval, use main query directly
+	if len(allRetrievedResults) == 0 || fallback == true {
+		fmt.Printf("[ChainOfRAG] --- Fallback: No results found (or content moderation error), querying with main query ---\n")
+		fmt.Printf("[ChainOfRAG] Fallback query: %s\n", query)
+
+		// Get embedding for the main query
+		queryVector, err := c.embeddingModel.GetEmbedding(ctx, query)
+		if err != nil {
+			fmt.Printf("[ChainOfRAG] Fallback ERROR: Failed to get embedding: %v\n", err)
+			// Continue with empty results rather than failing
+		} else {
+			// Search directly with main query
+			searchOptions := &schema.SearchOptions{
+				TopK:      topK,
+				Threshold: threshold,
+			}
+			searchResults := make([]schema.SearchResult, 0)
+			if c.config.HybridSearch {
+				searchResults, err = c.vectorDB.SearchHybridDocs(ctx, query, queryVector, searchOptions)
+			} else {
+				searchResults, err = c.vectorDB.SearchDocs(ctx, query, queryVector, searchOptions)
+			}
+
+			if err != nil {
+				fmt.Printf("[ChainOfRAG] Fallback ERROR: Search failed: %v\n", err)
+			} else {
+				fmt.Printf("[ChainOfRAG] Fallback retrieved %d documents\n", len(searchResults))
+
+				// Convert search results to RetrievalResult
+				fallbackResults := make([]RetrievalResult, 0, len(searchResults))
+				for _, result := range searchResults {
+					fallbackResults = append(fallbackResults, RetrievalResult{
+						Text:     result.Document.Content,
+						Score:    result.Score,
+						Document: result.Document,
+						Metadata: result.Document.Metadata,
+					})
+				}
+
+				allRetrievedResults = deduplicateResults(fallbackResults)
+				fmt.Printf("[ChainOfRAG] Fallback final documents: %d\n", len(allRetrievedResults))
+			}
+		}
+	}
+
+	fmt.Printf("[ChainOfRAG] ===== Retrieve Phase Completed =====\n\n")
+
 	additionalInfo := map[string]interface{}{
 		"intermediate_context": intermediateContexts,
+		"used_fallback":        len(intermediateContexts) == 0 && len(allRetrievedResults) > 0,
 	}
+
+	if len(allRetrievedResults) > topK {
+		allRetrievedResults = allRetrievedResults[:topK]
+	}
+
+	fmt.Printf("[ChainOfRAG]   Final retrieved documents: %d\n", len(allRetrievedResults))
 
 	return allRetrievedResults, tokenUsage, additionalInfo, nil
 }
@@ -338,15 +463,24 @@ func (c *ChainOfRAG) Retrieve(ctx context.Context, query string, kwargs map[stri
 // Query executes a query and returns the final answer along with all retrieved results
 // This implements the RAGAgent interface
 func (c *ChainOfRAG) Query(ctx context.Context, query string, kwargs map[string]interface{}) (string, []RetrievalResult, int, error) {
+	fmt.Printf("[ChainOfRAG] ===== Starting Query Phase =====\n")
+	fmt.Printf("[ChainOfRAG] Query: %s\n", query)
+
 	allRetrievedResults, nTokenRetrieval, additionalInfo, err := c.Retrieve(ctx, query, kwargs)
 	if err != nil {
+		fmt.Printf("[ChainOfRAG] ERROR: Retrieve failed: %v\n", err)
 		return "", nil, 0, err
 	}
+
+	fmt.Printf("[ChainOfRAG] Step 5: Generating final answer...\n")
+	fmt.Printf("[ChainOfRAG]   Retrieved documents: %d\n", len(allRetrievedResults))
+	fmt.Printf("[ChainOfRAG]   Retrieval tokens used: %d\n", nTokenRetrieval)
 
 	intermediateContext, ok := additionalInfo["intermediate_context"].([]string)
 	if !ok {
 		intermediateContext = []string{}
 	}
+	fmt.Printf("[ChainOfRAG]   Intermediate contexts: %d\n", len(intermediateContext))
 
 	formattedDocs := c.formatRetrievedResults(allRetrievedResults)
 	contextStr := strings.Join(intermediateContext, "\n")
@@ -356,11 +490,18 @@ func (c *ChainOfRAG) Query(ctx context.Context, query string, kwargs map[string]
 		{Role: "user", Content: prompt},
 	})
 	if err != nil {
+		fmt.Printf("[ChainOfRAG] ERROR: Failed to generate final answer: %v\n", err)
 		return "", nil, 0, err
 	}
 
 	finalAnswer := response.Content
-	return finalAnswer, allRetrievedResults, nTokenRetrieval + response.TotalTokens, nil
+	totalTokens := nTokenRetrieval + response.TotalTokens
+	fmt.Printf("[ChainOfRAG]   Final answer generated (length: %d chars)\n", len(finalAnswer))
+	fmt.Printf("[ChainOfRAG]   Final answer tokens: %d\n", response.TotalTokens)
+	fmt.Printf("[ChainOfRAG]   Total tokens (retrieval + generation): %d\n", totalTokens)
+	fmt.Printf("[ChainOfRAG] ===== Query Phase Completed =====\n\n")
+
+	return finalAnswer, allRetrievedResults, totalTokens, nil
 }
 
 // formatRetrievedResults formats retrieved results for prompt

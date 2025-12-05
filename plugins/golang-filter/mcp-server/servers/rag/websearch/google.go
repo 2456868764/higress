@@ -3,11 +3,43 @@ package websearch
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/alibaba/higress/plugins/golang-filter/mcp-server/servers/rag/config"
 )
+
+type googleProviderInitializer struct {
+}
+
+func (g *googleProviderInitializer) validateConfig(cfg *config.WebSearchConfig) error {
+	if cfg.APIKey == "" {
+		return errors.New("[google websearch] apiKey is required")
+	}
+	if cfg.CX == "" {
+		return errors.New("[google websearch] cx (Custom Search Engine ID) is required")
+	}
+	if cfg.MaxResults <= 0 {
+		cfg.MaxResults = 5
+	}
+	return nil
+}
+
+func (g *googleProviderInitializer) CreateProvider(cfg config.WebSearchConfig) (InternetSearchProvider, error) {
+	if err := g.validateConfig(&cfg); err != nil {
+		return nil, err
+	}
+	return &GoogleProvider{
+		apiKey: cfg.APIKey,
+		cx:     cfg.CX,
+		Client: &http.Client{
+			Timeout: 10 * time.Second,
+		},
+	}, nil
+}
 
 type GoogleProvider struct {
 	apiKey string

@@ -9,6 +9,7 @@ type Config struct {
 	Embedding EmbeddingConfig `json:"embedding" yaml:"embedding"`
 	VectorDB  VectorDBConfig  `json:"vectordb" yaml:"vectordb"`
 	Reranker  RerankerConfig  `json:"reranker,omitempty" yaml:"reranker,omitempty"`
+	WebSearch WebSearchConfig `json:"websearch,omitempty" yaml:"websearch,omitempty"`
 }
 
 // RAGConfig contains basic configuration for the RAG system
@@ -54,6 +55,15 @@ type EmbeddingConfig struct {
 	BaseURL    string `json:"base_url,omitempty" yaml:"base_url,omitempty"`
 	Model      string `json:"model,omitempty" yaml:"model,omitempty"`
 	Dimensions int    `json:"dimensions,omitempty" yaml:"dimension,omitempty"`
+}
+
+// WebSearchConfig defines configuration for web search providers
+type WebSearchConfig struct {
+	Enabled    bool   `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	Provider   string `json:"provider" yaml:"provider"`                           // Available options: google, duckduckgo
+	APIKey     string `json:"api_key,omitempty" yaml:"api_key,omitempty"`         // API key for Google Custom Search API
+	CX         string `json:"cx,omitempty" yaml:"cx,omitempty"`                   // Custom Search Engine ID for Google
+	MaxResults int    `json:"max_results,omitempty" yaml:"max_results,omitempty"` // Maximum number of results to return (default: 5)
 }
 
 // VectorDBConfig defines configuration for vector databases

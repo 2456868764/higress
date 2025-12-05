@@ -48,6 +48,15 @@ func init() {
 				Model:      "text-embedding-ada-002",
 				Dimensions: 1536,
 			},
+
+			WebSearch: config.WebSearchConfig{
+				Enabled:    false,
+				Provider:   "google",
+				APIKey:     "",
+				CX:         "",
+				MaxResults: 5,
+			},
+
 			VectorDB: config.VectorDBConfig{
 				Provider:   "milvus",
 				Host:       "localhost",
@@ -300,6 +309,26 @@ func (c *RAGConfig) ParseConfig(cfg map[string]any) error {
 		}
 		if threshold, exists := rerankerConfig["threshold"].(float64); exists {
 			c.config.Reranker.Threshold = threshold
+		}
+	}
+
+	// Parse WebSearch configuration
+	// api.LogDebugf("RAG parse websearch config")
+	if websearchConfig, ok := cfg["websearch"].(map[string]any); ok {
+		if enabled, exists := websearchConfig["enabled"].(bool); exists {
+			c.config.WebSearch.Enabled = enabled
+		}
+		if provider, exists := websearchConfig["provider"].(string); exists {
+			c.config.WebSearch.Provider = provider
+		}
+		if apiKey, exists := websearchConfig["api_key"].(string); exists {
+			c.config.WebSearch.APIKey = apiKey
+		}
+		if cx, exists := websearchConfig["cx"].(string); exists {
+			c.config.WebSearch.CX = cx
+		}
+		if maxResults, exists := websearchConfig["max_results"].(float64); exists {
+			c.config.WebSearch.MaxResults = int(maxResults)
 		}
 	}
 

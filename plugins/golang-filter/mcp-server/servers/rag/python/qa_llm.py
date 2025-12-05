@@ -129,6 +129,10 @@ def main():
     base_url = args.base_url or os.getenv("OPENAI_BASE_URL","https://dashscope.aliyuncs.com/compatible-mode/v1")
     model_name = args.model or os.getenv("OPENAI_MODEL", "qwen-plus")
 
+    # api_key = args.api_key or os.getenv("OPENAI_API_KEY","sk-44f9a216d01345b09e63f2bcc370b7af")
+    # base_url = args.base_url or os.getenv("OPENAI_BASE_URL","https://api.deepseek.com")
+    # model_name = args.model or os.getenv("OPENAI_MODEL", "deepseek-reasoner")
+
     
     # Initialize OpenAI client
     client = OpenAI(api_key=api_key, base_url=base_url)

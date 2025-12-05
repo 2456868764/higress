@@ -30,7 +30,8 @@ type RAGClient struct {
 	textSplitter      textsplitter.TextSplitter
 	llmProvider       llm.Provider
 	rerankerClient    *reranker.RerankerClient
-	ragAgent          agent.RAGAgent // The RAG agent instance (DefaultRAG, ChainOfRAG, or RAGRouter)
+	websearchProvider websearch.InternetSearchProvider // Web search provider (optional)
+	ragAgent          agent.RAGAgent                   // The RAG agent instance (DefaultRAG, ChainOfRAG, or RAGRouter)
 }
 
 // NewRAGClient creates a new RAG client instance
@@ -79,6 +80,16 @@ func NewRAGClient(config *config.Config) (*RAGClient, error) {
 			return nil, fmt.Errorf("create reranker client failed, err: %w", err)
 		}
 		ragclient.rerankerClient = rerankerClient
+	}
+
+	// Initialize websearch provider if websearch is enabled in config
+	if ragclient.config.WebSearch.Enabled && ragclient.config.WebSearch.Provider != "" {
+		// api.LogDebugf("RAG New WebSearch Provider: %+v", ragclient.config.WebSearch)
+		websearchProvider, err := websearch.NewWebSearchProvider(ragclient.config.WebSearch)
+		if err != nil {
+			return nil, fmt.Errorf("create websearch provider failed, err: %w", err)
+		}
+		ragclient.websearchProvider = websearchProvider
 	}
 
 	// Initialize RAG agent based on configuration
@@ -284,6 +295,7 @@ func (r *RAGClient) Chat(query string) (string, error) {
 
 // createDeepSearch creates a DeepSearch agent
 func (r *RAGClient) createDeepSearch(config *agent.DefaultRAGConfig) (agent.RAGAgent, error) {
+	fmt.Printf("createDeepSearch: %+v\n", config)
 	if r.llmProvider == nil {
 		return nil, fmt.Errorf("llm provider is required for DeepSearch agent")
 	}
@@ -292,12 +304,15 @@ func (r *RAGClient) createDeepSearch(config *agent.DefaultRAGConfig) (agent.RAGA
 	maxIter := 3
 	textWindowSplit := false
 
-	// Configure internet search - defaulting to DuckDuckGo if enabled in future config
-	// For now, we use the default config which is disabled, but we set the provider to DuckDuckGo just in case
+	// Configure internet search from config
 	internetSearchConfig := websearch.DefaultInternetSearchConfig()
-	internetSearchConfig.Provider = websearch.NewDuckDuckGoProvider()
-	// TODO: Expose these in main Config
-	internetSearchConfig.Enabled = true
+	if r.config.WebSearch.Enabled && r.websearchProvider != nil {
+		internetSearchConfig.Enabled = true
+		internetSearchConfig.Provider = r.websearchProvider
+		if r.config.WebSearch.MaxResults > 0 {
+			internetSearchConfig.MaxResults = r.config.WebSearch.MaxResults
+		}
+	}
 
 	return agent.NewDeepSearch(
 		r.llmProvider,

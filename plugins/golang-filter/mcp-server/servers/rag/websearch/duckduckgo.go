@@ -9,7 +9,30 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/alibaba/higress/plugins/golang-filter/mcp-server/servers/rag/config"
 )
+
+type duckDuckGoProviderInitializer struct {
+}
+
+func (d *duckDuckGoProviderInitializer) validateConfig(cfg *config.WebSearchConfig) error {
+	if cfg.MaxResults <= 0 {
+		cfg.MaxResults = 5
+	}
+	return nil
+}
+
+func (d *duckDuckGoProviderInitializer) CreateProvider(cfg config.WebSearchConfig) (InternetSearchProvider, error) {
+	if err := d.validateConfig(&cfg); err != nil {
+		return nil, err
+	}
+	return &DuckDuckGoProvider{
+		Client: &http.Client{
+			Timeout: 10 * time.Second,
+		},
+	}, nil
+}
 
 type DuckDuckGoProvider struct {
 	Client *http.Client

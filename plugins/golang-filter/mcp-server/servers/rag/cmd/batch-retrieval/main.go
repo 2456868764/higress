@@ -110,6 +110,7 @@ func (r *Retriever) RetrieveWithDefaults(ctx context.Context, query string) ([]s
 // It reads queries from inputFile, performs retrieval with optional reranking,
 // and saves results to outputFile
 // workers: number of concurrent workers (0 or 1 means sequential processing)
+// skipQuery: number of queries to skip from the beginning (default: 0)
 func BatchRetrieval(
 	ctx context.Context,
 	ragClient *rag.RAGClient,
@@ -117,6 +118,7 @@ func BatchRetrieval(
 	inputFile string,
 	outputFile string,
 	maxQuery int,
+	skipQuery int,
 	workers int,
 ) error {
 	// 1. Load query data from JSON file
@@ -126,6 +128,15 @@ func BatchRetrieval(
 	}
 
 	fmt.Printf("Loaded %d queries from %s\n", len(queryData), inputFile)
+
+	// Skip queries based on skipQuery
+	if skipQuery > 0 {
+		if skipQuery >= len(queryData) {
+			return fmt.Errorf("skip_query (%d) is greater than or equal to total queries (%d)", skipQuery, len(queryData))
+		}
+		queryData = queryData[skipQuery:]
+		fmt.Printf("Skipped %d queries, remaining %d queries\n", skipQuery, len(queryData))
+	}
 
 	// Filter queries based on maxQuery
 	if maxQuery > 0 && maxQuery < len(queryData) {
@@ -423,6 +434,7 @@ func main() {
 		threshold    = flag.Float64("threshold", 0.0, "Score threshold for filtering")
 		rerank       = flag.Bool("rerank", false, "Enable reranking")
 		maxQuery     = flag.Int("max_query", 0, "max query to excute, 0 means no limit")
+		skipQuery    = flag.Int("skip_query", 0, "number of queries to skip from the beginning, default is 0")
 		workers      = flag.Int("workers", 1, "Number of concurrent workers (0 or 1 means sequential processing)")
 		collection   = flag.String("collection", "corpus_collection_500", "collection name")
 		rerankTopK   = flag.Int("rerank_topk", 20, "Number of candidates to retrieve before reranking")
@@ -466,6 +478,14 @@ func main() {
 			Agent:      *agent,
 		},
 
+		WebSearch: config.WebSearchConfig{
+			Enabled:    false,
+			Provider:   "google",
+			APIKey:     "",
+			CX:         "",
+			MaxResults: 5,
+		},
+
 		// LLM: config.LLMConfig{
 		// 	Provider: "openai",
 		// 	APIKey:   getEnvOrDefault("OPENAI_API_KEY", "sk-xxx"),
@@ -475,10 +495,11 @@ func main() {
 
 		LLM: config.LLMConfig{
 			Provider: "openai",
-			APIKey:   getEnvOrDefault("OPENAI_API_KEY", "sk-xxx"),
+			APIKey:   getEnvOrDefault("OPENAI_API_KEY", "sk-44f9a216d01345b09e63f2bcc370b7af"),
 			BaseURL:  getEnvOrDefault("OPENAI_BASE_URL", "https://api.deepseek.com"),
 			Model:    "deepseek-reasoner",
 		},
+
 		Reranker: config.RerankerConfig{
 			BaseURL:   getEnvOrDefault("RERANKER_BASE_URL", "http://localhost:8090/v1"),
 			APIKey:    getEnvOrDefault("RERANKER_API_KEY", "sk-xxx"),
@@ -575,6 +596,7 @@ func main() {
 	fmt.Printf("  Input file: %s\n", *inputFile)
 	fmt.Printf("  Output file: %s\n", *outputFile)
 	fmt.Printf("  Max query: %d\n", *maxQuery)
+	fmt.Printf("  Skip query: %d\n", *skipQuery)
 	fmt.Printf("  Workers: %d\n", *workers)
 	fmt.Printf("  TopK: %d\n", *topK)
 	fmt.Printf("  Threshold: %.2f\n", *threshold)
@@ -584,7 +606,7 @@ func main() {
 	fmt.Printf("  Collection: %s\n", *collection)
 	fmt.Println()
 
-	if err := BatchRetrieval(ctx, ragClient, cfg, *inputFile, *outputFile, *maxQuery, *workers); err != nil {
+	if err := BatchRetrieval(ctx, ragClient, cfg, *inputFile, *outputFile, *maxQuery, *skipQuery, *workers); err != nil {
 		fmt.Fprintf(os.Stderr, "Batch retrieval failed: %v\n", err)
 		os.Exit(1)
 	}

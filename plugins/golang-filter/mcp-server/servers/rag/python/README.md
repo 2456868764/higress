@@ -18,7 +18,7 @@
 - [📄 Paper Link (Accepted by COLM 2024): MultiHop-RAG: Benchmarking Retrieval-Augmented Generation for Multi-Hop Queries](https://arxiv.org/pdf/2401.15391)
 
 🚀 概述
-MultiHop-RAG：一个用于评估跨文档检索与推理能力的问答数据集，专为包含元数据的RAG流程设计。该数据集包含2556个查询，每个查询所需的证据分散在2至4个不同文档中。查询设计还涉及文档元数据的使用，精准还原现实世界RAG应用中常见的复杂场景。
+MultiHop-RAG：一个用于评估跨文档检索与推理能力的问答数据集，专为包含元数据的RAG流程设计。该数据集来源609个语料文档和2556个查询，每个查询所需的证据分散在2至4个不同文档中。查询设计还涉及文档元数据的使用，精准还原现实世界RAG应用中常见的复杂场景。
 
 ![](./images/rag.png)
 
@@ -149,10 +149,10 @@ RAG 系统评估采用**两阶段评估**流程：**Retrieval 评估**和 **QA �
 ### 4.1 评估流程概览
 
 ```
-数据索引 → 批量检索 → 答案生成 → 结果评估
-   ↓          ↓          ↓          ↓
-index.py  batch-retrieval  qa_llm.py  retrieval_evaluate.py
-                              ↓          qa_evaluate.py
+数据索引 →→→→   批量检索 →→→→   答案生成 →→→→   结果评估
+   ↓             ↓               ↓             ↓
+index.py  batch-retrieval(go)  qa_llm.py  retrieval_evaluate.py
+   ↓             ↓               ↓          qa_evaluate.py
 ```
 
 ### 4.2 详细步骤说明
@@ -165,17 +165,17 @@ index.py  batch-retrieval  qa_llm.py  retrieval_evaluate.py
 
 **使用方法**:
 ```bash
-cd plugins/golang-filter/mcp-server/servers/rag/python
-python index.py \
-  --input dataset/MultiHopRAG.json \
-  --collection corpus_collection_500 \
+cd plugins/golang-filter/mcp-server/servers/rag
+python python/index.py \
+  --corpus_file dataset/corpus.json \
+  --collection_name corpus_collection_500 \
   --chunk_size 500 \
   --chunk_overlap 50
 ```
 
 **关键参数**:
-- `--input`: 输入数据集文件路径
-- `--collection`: Milvus 集合名称
+- `--corpus_file`: 输入数据集文件路径
+- `--collection_name`: Milvus 集合名称
 - `--chunk_size`: 文档切分大小（默认 500）
 - `--chunk_overlap`: 块重叠大小（默认 50）
 
@@ -189,14 +189,15 @@ python index.py \
 ```bash
 cd plugins/golang-filter/mcp-server/servers/rag
 go run cmd/batch-retrieval/main.go \
-  -input python/dataset/MultiHopRAG.json \
-  -output cmd/batch-retrieval/output/retrieval_default_500.json \
-  -agent default \
-  -topk 10 \
-  -threshold 0.0 \
-  -rerank false \
-  -workers 5 \
-  -max_query 500
+  -input=python/dataset/MultiHopRAG.json \
+  -output=python/output/retrieval_default_500.json \
+  -collection=corpus_collection_500 \
+  -agent=default \
+  -topk=10 \
+  -threshold=0.0 \
+  -rerank=false \
+  -hybrid_search=false \
+  -workers=5
 ```
 
 **关键参数**:
@@ -223,23 +224,23 @@ go run cmd/batch-retrieval/main.go \
 
 **使用方法**:
 ```bash
-cd plugins/golang-filter/mcp-server/servers/rag/python
-python qa_llm.py \
-  --retrieval-output ../cmd/batch-retrieval/output/retrieval_default_500.json \
-  --qa-output qa_output/qa_default_500.json \
+cd plugins/golang-filter/mcp-server/servers/rag
+python python/qa_llm.py \
+  --input ./python/output/retrieval_default_500.json \
+  --output ./python/qa_output/qa_default_500.json \
   --model qwen-plus \
   --temperature 0.3 \
   --max-tokens 512 \
-  --workers 10
+  --max-workers 10
 ```
 
 **关键参数**:
-- `--retrieval-output`: 检索结果文件路径（步骤 2 的输出）
-- `--qa-output`: QA 答案输出文件路径
+- `--input`: 检索结果文件路径（步骤 2 的输出）
+- `--output`: QA 答案输出文件路径
 - `--model`: LLM 模型名称（如 `qwen-plus`, `gpt-4o`）
 - `--temperature`: 生成温度参数（默认 0.3）
 - `--max-tokens`: 最大生成 token 数（默认 512）
-- `--workers`: 并发 LLM 调用数量（默认 10）
+- `--max-workers`: 并发 LLM 调用数量（默认 10）
 
 #### 步骤 4: 结果评估 (Evaluation)
 
@@ -251,9 +252,9 @@ python qa_llm.py \
 
 **使用方法**:
 ```bash
-cd plugins/golang-filter/mcp-server/servers/rag/python
-python retrieval_evaluate.py \
-  --retrieval-output ../cmd/batch-retrieval/output/retrieval_default_500.json
+cd plugins/golang-filter/mcp-server/servers/rag
+python python/retrieval_evaluate.py \
+  --file ./python/output/retrieval_default_500.json
 ```
 
 
@@ -265,10 +266,10 @@ python retrieval_evaluate.py \
 
 **使用方法**:
 ```bash
-cd plugins/golang-filter/mcp-server/servers/rag/python
-python qa_evaluate.py \
-  --qa-output qa_output/qa_default_500.json \
-  --dataset dataset/MultiHopRAG.json
+cd plugins/golang-filter/mcp-server/servers/rag
+python python/qa_evaluate.py \
+  --qa-output ./python/qa_output/default_500.json \
+  --dataset ./python/dataset/MultiHopRAG.json
 ```
 
 
@@ -378,6 +379,10 @@ RAG Client 层采用 **Agent 模式**设计，通过统一的接口抽象和灵�
    }
    ```
 
+##### Agent 接口设计原理
+
+![](./images/rag_agent.png)
+
 ##### Agent 实现
 
 系统提供了三种核心 Agent 实现：
@@ -395,6 +400,8 @@ RAG Client 层采用 **Agent 模式**设计，通过统一的接口抽象和灵�
 1. **意图识别**：利用 LLM 分析用户查询的意图和复杂度
 2. **动态路由**：根据预定义的 Agent 描述，选择最匹配的 Agent
 3. **灵活扩展**：支持注册任意实现了 `RAGAgent` 接口的新 Agent
+
+
 
 
 ## 2. 增强方案评估
@@ -421,8 +428,8 @@ RAG Client 层采用 **Agent 模式**设计，通过统一的接口抽象和灵�
 |---------|----------|----------|---------------|------------|--------------|---------|
 | **inference_query** | 0.9301 | 0.9485 | 0.9534 | **0.9681** | 0.9645 | **ChainOfRAG** |
 | **comparison_query** | 0.5409 | 0.5759 | 0.5853 | 0.5700 | 0.7033 | Hybrid Search |
-| **null_query** | **0.8405** | 0.8073 | 0.8306 | 0.9000 | 0.6844 | **ChainOfRAG** |
-| **temporal_query** | 0.4871 | 0.5009 | 0.4957 | 0.5152 | 0.5506 | **ChainOfRAG**  |
+| **null_query** | 0.8405 | 0.8073 | 0.8306 | **0.9000** | 0.6844 | **ChainOfRAG** |
+| **temporal_query** | 0.4871 | 0.5009 | 0.4957 | **0.5152** | 0.5506 | **ChainOfRAG**  |
 | **Overall Recall** | **0.6882** | **0.7050** | **0.7113** | **0.7267** | **0.7496** | **ChainOfRAG** |
 
 ** 现在ChainofRAG 评估 800个问题， 整个测试集跑一遍需要2000万以上TOKEN.
@@ -440,7 +447,7 @@ RAG Client 层采用 **Agent 模式**设计，通过统一的接口抽象和灵�
 
 **Hybrid Search (混合搜索)**
 - 整体 Recall: **0.7113** (+3.4%)
-- 优势：在 inference_query 和 comparison_query 上表现最佳
+- 优势：在 inference_query 和 comparison_query 上表现较佳
 - 适用场景：查询需要精确匹配的场景
 
 **ChainOfRAG (链式检索增强生成)**
@@ -480,6 +487,10 @@ RAG Client 层采用 **Agent 模式**设计，通过统一的接口抽象和灵�
 - **精准度大幅提升**：Cross-Encoder 能捕捉查询与文档间复杂的交互语义，显著优于单纯的向量相似度。
 - **优化 LLM 性能**：通过过滤噪声文档，减少了 Token 消耗，并缓解了 "Lost in the Middle" 现象。
 - **即插即用**：作为独立模块，可轻松集成到现有的 RAG 流程中，无需重新索引向量库。
+
+### 原理如图
+![](./images/rerank.png)
+
 
 
 ## 2. Hybrid Search(混合搜索)
@@ -549,20 +560,16 @@ schema.WithField(sparseVectorField).WithFunction(function)
 
 **2. Search 执行阶段**
 并行执行两路搜索，并使用 Reranker 进行结果融合。
-
 ```golang
 outputFields, _ := m.mapper.GetOutputFields()
 vectorField, _ := m.mapper.GetVectorField()
 sparseVectorField, _ := m.mapper.GetSparseVectorField()
-
 // Build vector search request
 request1 := milvusclient.NewAnnRequest(vectorField.RawName, options.TopK, entity.FloatVector(vector))
-
 // Build sparse vector search request
 annParam := index.NewSparseAnnParam()
 annParam.WithDropRatio(0.2)
 request2 := milvusclient.NewAnnRequest(sparseVectorField.RawName, options.TopK, entity.Text(query)).WithAnnParam(annParam)
-
 // Build reranker based on configuration
 var reranker milvusclient.Reranker
 switch m.config.HybridSearch.Ranker {
@@ -577,15 +584,11 @@ default:
     // Default to RRF reranker
     reranker = milvusclient.NewRRFReranker()
 }
-
 // Perform hybrid search
 searchResults, err := m.client.HybridSearch(ctx, milvusclient.NewHybridSearchOption(
-    m.collection,
-    options.TopK,
-    request1,
-    request2,
+    m.collection,options.TopK,
+    request1,request2,
 ).WithReranker(reranker).WithOutputFields(outputFields...))
-
 ```
 
 
@@ -603,16 +606,20 @@ searchResults, err := m.client.HybridSearch(ctx, milvusclient.NewHybridSearchOpt
 1. **索引阶段 (Indexing)**：
    - **切分父文档 (Parent Chunking)**：将原始文档切分为较大的父文档块（保留完整上下文）。
    - **生成子文档 (Child Chunking)**：将每个父文档块进一步切分为多个小的子文档块（用于精准匹配）。
-   - **建立映射**：为每个子文档块建立与父文档块的 ID 映射关系，并将子文档块的向量存入向量数据库。
+   - **建立映射**：每个子文档块 Parent_ID 与父文档块的 ID 建立映射关系，并将子文档块的向量存入向量数据库。
 
 2. **检索阶段 (Retrieval)**：
    - **子块匹配**：利用 Query Embedding 在向量数据库中检索最相关的子文档块（利用小块的高精准度）。
-   - **父块回溯**：通过子块的 Parent-ID 映射，自动回溯并召回其对应的完整父文档块。
+   - **父块回溯**：通过子块的 Parent_ID 映射，自动回溯并召回其对应的完整父文档块。
 
 3. **生成阶段 (Generation)**：
    - **上下文增强**：将召回的完整父文档块作为 Context 发送给 LLM，提供充足的上下文信息以支持更复杂的推理和生成。
 
-### 架构图解
+### 设计原理如下：
+
+![](./images/parent_document_arch.png)
+
+### 流程图如下
 ![](./images/parent_document.png)
 
 ### 核心优势

@@ -73,6 +73,7 @@ func NewRAGClient(config *config.Config) (*RAGClient, error) {
 	ragclient.vectordbProvider = provider
 
 	// Initialize reranker client if reranking is enabled in RAG config
+	fmt.Printf("[RAGClient] RAG.Rerank config value: %v\n", ragclient.config.RAG.Rerank)
 	if ragclient.config.RAG.Rerank {
 		// api.LogDebugf("RAG New Reranker Client: %+v", ragclient.config.Reranker)
 		rerankerClient, err := reranker.NewRerankerClient(&ragclient.config.Reranker)
@@ -80,6 +81,10 @@ func NewRAGClient(config *config.Config) (*RAGClient, error) {
 			return nil, fmt.Errorf("create reranker client failed, err: %w", err)
 		}
 		ragclient.rerankerClient = rerankerClient
+		fmt.Printf("[RAGClient] Reranker client initialized\n")
+	} else {
+		fmt.Printf("[RAGClient] Reranker client NOT initialized (RAG.Rerank is false)\n")
+		ragclient.rerankerClient = nil // Explicitly set to nil to ensure it's not initialized
 	}
 
 	// Initialize websearch provider if websearch is enabled in config
@@ -117,6 +122,7 @@ func (r *RAGClient) createRAGAgent() (agent.RAGAgent, error) {
 		RerankTopK:   r.config.RAG.RerankTopK,
 		HybridSearch: r.config.VectorDB.HybridSearch.Enabled,
 	}
+	fmt.Printf("[RAGClient] Creating agent with config - Rerank: %v, RerankTopK: %d\n", agentConfig.Rerank, agentConfig.RerankTopK)
 
 	switch agentType {
 	case "default":

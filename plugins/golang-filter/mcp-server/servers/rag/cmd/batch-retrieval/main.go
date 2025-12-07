@@ -443,13 +443,52 @@ func main() {
 
 	flag.Parse()
 
+	// Check for common flag parsing errors
+	// Go's flag.Bool requires -flag=false format, not -flag false
+	// If user uses -rerank false, rerank will be true and "false" will be in unparsed args
+	unparsedArgs := flag.Args()
+	for i := 1; i < len(os.Args)-1; i++ {
+		arg := os.Args[i]
+		nextArg := os.Args[i+1]
+
+		// Check for -rerank false or -rerank true pattern
+		if arg == "-rerank" && (nextArg == "false" || nextArg == "true") {
+			// Check if nextArg is in unparsed args (meaning it wasn't parsed as part of the flag)
+			for _, unparsed := range unparsedArgs {
+				if unparsed == nextArg {
+					fmt.Fprintf(os.Stderr, "Error: Incorrect flag syntax detected.\n")
+					fmt.Fprintf(os.Stderr, "  You used: -rerank %s\n", nextArg)
+					fmt.Fprintf(os.Stderr, "  Correct syntax: -rerank=%s (use equals sign, not space)\n", nextArg)
+					fmt.Fprintf(os.Stderr, "  Note: Without equals sign, -rerank is always set to true\n\n")
+					os.Exit(1)
+				}
+			}
+		}
+
+		// Check for -hybrid_search false or -hybrid_search true pattern
+		if arg == "-hybrid_search" && (nextArg == "false" || nextArg == "true") {
+			for _, unparsed := range unparsedArgs {
+				if unparsed == nextArg {
+					fmt.Fprintf(os.Stderr, "Error: Incorrect flag syntax detected.\n")
+					fmt.Fprintf(os.Stderr, "  You used: -hybrid_search %s\n", nextArg)
+					fmt.Fprintf(os.Stderr, "  Correct syntax: -hybrid_search=%s (use equals sign, not space)\n", nextArg)
+					fmt.Fprintf(os.Stderr, "  Note: Without equals sign, -hybrid_search is always set to true\n\n")
+					os.Exit(1)
+				}
+			}
+		}
+	}
+
 	// Print usage if help is requested
 	if len(os.Args) > 1 && (os.Args[1] == "-h" || os.Args[1] == "--help") {
 		fmt.Println("RAG Batch Retrieval Tool")
 		fmt.Println("\nUsage:")
 		flag.PrintDefaults()
 		fmt.Println("\nExample:")
-		fmt.Println("  go run cmd/batch-retrieval/main.go -input dataset/MultiHopRAG.json -output output/results.json -rerank -topk 10")
+		fmt.Println("  go run cmd/batch-retrieval/main.go -input dataset/MultiHopRAG.json -output output/results.json -rerank=false -topk 10")
+		fmt.Println("\nNote:")
+		fmt.Println("  For boolean flags (-rerank, -hybrid_search), use -flag=false or -flag=true")
+		fmt.Println("  Do NOT use -flag false or -flag true (with space)")
 		fmt.Println("\nEnvironment Variables:")
 		fmt.Println("  OPENAI_API_KEY       - OpenAI API key (required)")
 		fmt.Println("  OPENAI_BASE_URL      - OpenAI API base URL (optional)")
@@ -463,6 +502,11 @@ func main() {
 	}
 
 	// Create configuration from command line flags
+	// If rerank is false, set RerankTopK to 0 to avoid confusion
+	rerankTopKValue := *rerankTopK
+	if !*rerank {
+		rerankTopKValue = 0
+	}
 	cfg := &config.Config{
 		RAG: config.RAGConfig{
 			Splitter: config.SplitterConfig{
@@ -474,7 +518,7 @@ func main() {
 			TopK:       *topK,
 			Threshold:  *threshold,
 			Rerank:     *rerank,
-			RerankTopK: *rerankTopK,
+			RerankTopK: rerankTopKValue,
 			Agent:      *agent,
 		},
 

@@ -178,13 +178,16 @@ def index_corpus_to_milvus(
     
     # Load corpus data
     corpus_data = load_corpus_json(corpus_file_path)
+
+    # corpus_data = corpus_data[:1]
     
     # Process documents in batches
     total_chunks = 0
     total_documents = len(corpus_data)
+
     
     logger.info(f"Starting to index {total_documents} documents...")
-    logger.info(f"Chunk size: {chunk_size}, Chunk overlap: {chunk_overlap}")
+    logger.info(f"Chunk size: {chunk_size}, Chunk overlap: {chunk_overlap} , Batch size: {batch_size} Smaller Chunk size: {smaller_chunk_size}")
     
     for batch_start in tqdm(range(0, total_documents, batch_size), desc="Processing batches"):
         batch_end = min(batch_start + batch_size, total_documents)
@@ -240,25 +243,24 @@ def index_corpus_to_milvus(
                     smaller_documents = []
                     for doc in documents:
                         if len(doc.page_content) < smaller_chunk_size:
-                            logger.warning(f"Skipping document with content length less than {smaller_chunk_size}: {title}")
+                            logger.info(f"Skipping document with content length less than {smaller_chunk_size}: {title}")
                             continue
 
                         smaller_chunks = split_text(doc.page_content, chunk_size=smaller_chunk_size, chunk_overlap=0)
-                        if smaller_chunks:
-                            for smaller_chunk in smaller_chunks:
-                                smaller_base_metadata = base_metadata.copy()
-                                smaller_base_metadata["chunk_type"] = "smaller"
-                                smaller_base_metadata['parent_id'] = doc.metadata['id']
-                                smaller_documents = create_documents_from_chunks(smaller_chunks, smaller_base_metadata)
-                                smaller_corpus_file = CorpusFileImpl(
-                                    filename=url or title,
-                                    metadata=smaller_base_metadata
-                                )
-                                smaller_doc_infos = vector_store.add_doc(smaller_corpus_file, smaller_documents)
-                                total_chunks += len(smaller_documents)
-                                logger.debug(f"Added {len(smaller_documents)} smaller chunks for document: {title}, total chunks: {total_chunks}")
+                        if len(smaller_chunks) > 0:
+                            smaller_base_metadata = base_metadata.copy()
+                            smaller_base_metadata["chunk_type"] = "smaller"
+                            smaller_base_metadata['parent_id'] = doc.metadata['id']
+                            smaller_documents = create_documents_from_chunks(smaller_chunks, smaller_base_metadata)
+                            smaller_corpus_file = CorpusFileImpl(
+                                filename=url or title,
+                                metadata=smaller_base_metadata
+                            )
+                            smaller_doc_infos = vector_store.add_doc(smaller_corpus_file, smaller_documents)
+                            total_chunks += len(smaller_documents)
+                            logger.info(f"Added {len(smaller_documents)} smaller chunks for document: {title}, total chunks: {total_chunks}")
                 
-                logger.debug(
+                logger.info(
                     f"Indexed document '{title}': "
                     f"{len(chunks)} chunks, {len(documents)} documents"
                 )
@@ -289,7 +291,7 @@ if __name__ == "__main__":
     parser.add_argument(
         '--collection_name',
         type=str,
-        default='corpus_collection_1000',
+        default='corpus_collection',
         help='Name of the Milvus collection'
     )
     parser.add_argument(
@@ -309,7 +311,7 @@ if __name__ == "__main__":
     parser.add_argument(
         '--chunk_overlap',
         type=int,
-        default=100,
+        default=50,
         help='Overlap between chunks'
     )
     parser.add_argument(
@@ -323,15 +325,16 @@ if __name__ == "__main__":
     
     # Get absolute path
     script_dir = Path(__file__).parent
-    corpus_path = script_dir / args.corpus_file
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    corpus_path = os.path.join(current_dir, args.corpus_file)
     
-    if not corpus_path.exists():
+    if not os.path.exists(corpus_path):
         logger.error(f"Corpus file not found: {corpus_path}")
         exit(1)
     
     # Index corpus to Milvus
     index_corpus_to_milvus(
-        corpus_file_path=str(corpus_path),
+        corpus_file_path=corpus_path,
         collection_name=args.collection_name,
         chunk_size=args.chunk_size,
         smaller_chunk_size=args.smaller_chunk_size,

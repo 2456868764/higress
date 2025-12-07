@@ -113,7 +113,9 @@ func (d *DefaultRAG) Retrieve(ctx context.Context, query string, kwargs map[stri
 	fmt.Printf("[DefaultRAG]   Query embedding obtained (dimension: %d)\n", len(queryVector))
 
 	// Determine search topK based on reranking configuration
+	fmt.Printf("[DefaultRAG] Config check - Rerank: %v, rerankerClient != nil: %v\n", d.config.Rerank, d.rerankerClient != nil)
 	useRerank := d.config.Rerank && d.rerankerClient != nil
+	fmt.Printf("[DefaultRAG] useRerank decision: %v\n", useRerank)
 	var searchTopK int
 	if useRerank {
 		searchTopK = d.config.RerankTopK

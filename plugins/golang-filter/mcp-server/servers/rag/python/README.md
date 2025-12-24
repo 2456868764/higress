@@ -522,7 +522,6 @@ RAG Client 层采用 **Agent 模式**设计，通过统一的接口抽象和灵�
 
 **1. Schema 定义阶段**
 定义 Dense Vector (Embedding) 和 Sparse Vector (BM25) 字段，并配置 Analyzer。
-
 ```golang
 // content field 
 fieldEntity = entity.NewField().WithName(field.RawName).
@@ -540,21 +539,17 @@ analyzerParams := map[string]any{
 }
 fieldEntity.WithEnableAnalyzer(true).WithAnalyzerParams(analyzerParams)
 schema.WithField(fieldEntity)
-
 // 添加 sparse vector field
 sparseVectorField, _ := m.mapper.GetSparseVectorField()
 textField, _ := m.mapper.GetRawField("content")
 // Add bm25 function
 function := entity.NewFunction().WithName("text_bm25_emb").
     WithInputFields(textField.RawName).
-    WithOutputFields(sparseVectorField.RawName).
-    WithType(entity.FunctionTypeBM25)
+    WithOutputFields(sparseVectorField.RawName).WithType(entity.FunctionTypeBM25)
 // Add sparse vector field
-sparseVectorField := entity.NewField().
-    WithName(sparseVectorField.RawName).
+sparseVectorField := entity.NewField().WithName(sparseVectorField.RawName).
     WithDataType(entity.FieldTypeSparseVector).
-    WithDescription("BM25 sparse vector field for hybrid search")
-
+    WithDescription("sparse vector field")
 schema.WithField(sparseVectorField).WithFunction(function)
 ```
 
@@ -565,11 +560,13 @@ outputFields, _ := m.mapper.GetOutputFields()
 vectorField, _ := m.mapper.GetVectorField()
 sparseVectorField, _ := m.mapper.GetSparseVectorField()
 // Build vector search request
-request1 := milvusclient.NewAnnRequest(vectorField.RawName, options.TopK, entity.FloatVector(vector))
-// Build sparse vector search request
+request1 := milvusclient.NewAnnRequest(vectorField.RawName, options.TopK, 
+                                       entity.FloatVector(vector))
+// Build sparse vector search request  
 annParam := index.NewSparseAnnParam()
 annParam.WithDropRatio(0.2)
-request2 := milvusclient.NewAnnRequest(sparseVectorField.RawName, options.TopK, entity.Text(query)).WithAnnParam(annParam)
+request2 := milvusclient.NewAnnRequest(sparseVectorField.RawName, options.TopK, 
+                                   entity.Text(query)).WithAnnParam(annParam)
 // Build reranker based on configuration
 var reranker milvusclient.Reranker
 switch m.config.HybridSearch.Ranker {

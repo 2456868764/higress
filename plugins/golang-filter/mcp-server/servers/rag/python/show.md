@@ -3,6 +3,7 @@
 ```
 cd /Users/jun/GolandProjects/higress/higress/plugins/golang-filter/mcp-server/servers/rag
 python python/index.py --help
+
 python python/index.py \
   --corpus_file ./dataset/corpus.json \
   --collection_name corpus_collection_test_500 \
@@ -22,6 +23,7 @@ python python/service.py
 
 ```
 cd  /Users/jun/GolandProjects/higress/higress/plugins/golang-filter/mcp-server/servers/rag
+
 go run cmd/batch-retrieval/main.go --help
 
 go run cmd/batch-retrieval/main.go \

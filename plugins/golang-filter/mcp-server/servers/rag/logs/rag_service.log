@@ -2798,3 +2798,161 @@
 2025-12-07 19:21:12,666 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.19s
 2025-12-07 19:21:37,306 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.15s
 2025-12-07 19:22:49,781 - rag_service - INFO - Generated embeddings for 1 input(s) in 1.04s
+2025-12-23 21:19:15,717 - rag_service - INFO - Logger initialized: rag_service
+2025-12-23 21:19:15,717 - rag_service - INFO - Log file: logs/rag_service.log
+2025-12-23 21:20:29,789 - rag_service - INFO - Logger initialized: rag_service
+2025-12-23 21:20:29,789 - rag_service - INFO - Log file: logs/rag_service.log
+2025-12-23 21:20:29,791 - rag_service - INFO - Initializing embedding model...
+2025-12-23 21:20:29,811 - rag_service - INFO - Using qwen as model engine to load embeddings
+2025-12-23 21:20:33,414 - rag_service - INFO - Loaded Qwen embedding model from /Users/jun/GolandProjects/higress/higress/plugins/golang-filter/mcp-server/servers/rag/python/models/Qwen/Qwen3-Embedding-0.6B
+2025-12-23 21:20:33,415 - rag_service - INFO - Embedding model initialized
+2025-12-23 21:20:33,415 - rag_service - INFO - Vector store config: host='127.0.0.1' port='19530' user='' password='' name='default' collection_name='corpus_collection_test_500' reranker_type='weighted' reranker_weight=0.5 chunk_context_window_size=0 kb_root_path='./knowledge_base' kwargs={}
+2025-12-23 21:20:33,415 - rag_service - INFO - Initializing Milvus vector store with collection: corpus_collection_test_500
+2025-12-23 21:20:35,967 - rag_service - INFO - Milvus vector store initialized
+2025-12-23 21:20:35,967 - rag_service - INFO - Loading corpus from: /Users/jun/GolandProjects/higress/higress/plugins/golang-filter/mcp-server/servers/rag/python/./dataset/corpus.json
+2025-12-23 21:20:36,004 - rag_service - INFO - Loaded 609 documents from corpus.json
+2025-12-23 21:20:36,004 - rag_service - INFO - Starting to index 609 documents...
+2025-12-23 21:20:36,004 - rag_service - INFO - Chunk size: 500, Chunk overlap: 50 , Batch size: 100 Smaller Chunk size: 0
+2025-12-23 21:20:36,007 - rag_service - INFO - 开始添加记录：https://mashable.com/article/cyber-monday-deals-amazon-2023
+2025-12-23 21:20:40,031 - rag_service - INFO - 添加记录结束：https://mashable.com/article/cyber-monday-deals-amazon-2023，一共17 条记录
+2025-12-23 21:20:40,032 - rag_service - INFO - Indexed document '200+ of the best deals from Amazon's Cyber Monday sale': 17 chunks, 17 documents
+2025-12-23 21:20:40,033 - rag_service - INFO - 开始添加记录：https://www.smh.com.au/business/markets/asx-set-to-drop-as-wall-street-s-september-slump-deepens-20230927-p5e7v7.html?ref=rss&utm_medium=rss&utm_source=rss_business
+2025-12-23 21:20:50,688 - rag_service - INFO - 添加记录结束：https://www.smh.com.au/business/markets/asx-set-to-drop-as-wall-street-s-september-slump-deepens-20230927-p5e7v7.html?ref=rss&utm_medium=rss&utm_source=rss_business，一共16 条记录
+2025-12-23 21:20:50,690 - rag_service - INFO - Indexed document 'ASX set to drop as Wall Street’s September slump deepens': 16 chunks, 16 documents
+2025-12-23 21:20:50,692 - rag_service - INFO - 开始添加记录：https://www.cnbc.com/2023/10/06/amazon-sellers-sound-off-on-the-ftcs-long-overdue-antitrust-case.html
+2025-12-23 21:20:59,962 - rag_service - INFO - 添加记录结束：https://www.cnbc.com/2023/10/06/amazon-sellers-sound-off-on-the-ftcs-long-overdue-antitrust-case.html，一共27 条记录
+2025-12-23 21:20:59,963 - rag_service - INFO - Indexed document 'Amazon sellers sound off on the FTC's 'long-overdue' antitrust case': 27 chunks, 27 documents
+2025-12-23 21:20:59,964 - rag_service - INFO - 开始添加记录：https://www.yardbarker.com/nfl/articles/christmas_day_preview_49ers_ravens_square_off_in_potential_super_bowl_sneak_peek/s1_13132_39720250
+2025-12-23 21:21:10,648 - rag_service - INFO - 添加记录结束：https://www.yardbarker.com/nfl/articles/christmas_day_preview_49ers_ravens_square_off_in_potential_super_bowl_sneak_peek/s1_13132_39720250，一共18 条记录
+2025-12-23 21:21:10,648 - rag_service - INFO - Indexed document 'Christmas Day preview: 49ers, Ravens square off in potential Super Bowl sneak peek': 18 chunks, 18 documents
+2025-12-23 21:21:10,650 - rag_service - INFO - 开始添加记录：https://www.sportingnews.com/us/nfl/news/raiders-lions-live-score-highlights-monday-night-football/d022b1d62b18af8a70c516f4
+2025-12-23 21:21:20,301 - rag_service - INFO - 添加记录结束：https://www.sportingnews.com/us/nfl/news/raiders-lions-live-score-highlights-monday-night-football/d022b1d62b18af8a70c516f4，一共39 条记录
+2025-12-23 21:21:20,306 - rag_service - INFO - Indexed document 'Raiders vs. Lions live score, updates, highlights from NFL 'Monday Night Football' game': 39 chunks, 39 documents
+2025-12-23 21:21:20,310 - rag_service - INFO - 开始添加记录：https://www.sportingnews.com/us/betting/news/utsa-vs-marshall-odds-props-predictions-spread-frisco-bowl/9f87d66235664608e5d678ba
+2025-12-23 21:21:44,815 - rag_service - INFO - Logger initialized: rag_service
+2025-12-23 21:21:44,816 - rag_service - INFO - Log file: logs/rag_service.log
+2025-12-23 21:21:44,902 - rag_service - INFO - Starting RAG Service API on 0.0.0.0:8090
+2025-12-23 21:21:45,031 - rag_service - INFO - Initializing embedding service with model: /Users/jun/GolandProjects/higress/higress/plugins/golang-filter/mcp-server/servers/rag/python/models/Qwen/Qwen3-Embedding-0.6B
+2025-12-23 21:21:45,046 - rag_service - INFO - Using qwen as model engine to load embeddings
+2025-12-23 21:21:48,323 - rag_service - INFO - Loaded Qwen embedding model from /Users/jun/GolandProjects/higress/higress/plugins/golang-filter/mcp-server/servers/rag/python/models/Qwen/Qwen3-Embedding-0.6B
+2025-12-23 21:21:48,323 - rag_service - INFO - Embedding service initialized successfully
+2025-12-23 21:21:48,323 - rag_service - INFO - Initializing reranker service with model: /Users/jun/GolandProjects/higress/higress/plugins/golang-filter/mcp-server/servers/rag/python/models/Qwen/Qwen3-Reranker-0.6B
+2025-12-23 21:21:51,494 - rag_service - INFO - Reranker service initialized successfully
+2025-12-23 21:22:47,972 - rag_service - INFO - Generated embeddings for 1 input(s) in 1.12s
+2025-12-23 21:22:48,217 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.13s
+2025-12-23 21:22:48,407 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.13s
+2025-12-23 21:22:48,577 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.13s
+2025-12-23 21:22:48,768 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.14s
+2025-12-23 21:22:48,926 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.13s
+2025-12-23 21:22:49,085 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.14s
+2025-12-23 21:22:49,239 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.13s
+2025-12-23 21:22:49,360 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.09s
+2025-12-23 21:22:49,470 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.09s
+2025-12-23 21:22:49,586 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.09s
+2025-12-23 21:22:49,752 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.13s
+2025-12-23 21:22:49,927 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.16s
+2025-12-23 21:22:50,085 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.14s
+2025-12-23 21:22:50,185 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.08s
+2025-12-23 21:22:50,335 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.13s
+2025-12-23 21:22:50,443 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.09s
+2025-12-23 21:22:50,595 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.14s
+2025-12-23 21:22:50,694 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.09s
+2025-12-23 21:22:50,833 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.13s
+2025-12-23 21:22:51,001 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.16s
+2025-12-23 21:22:51,154 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.14s
+2025-12-23 21:22:51,296 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.13s
+2025-12-23 21:22:51,471 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.16s
+2025-12-23 21:22:51,576 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.09s
+2025-12-23 21:22:51,718 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.13s
+2025-12-23 21:22:51,824 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.10s
+2025-12-23 21:22:51,971 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.14s
+2025-12-23 21:22:52,075 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.09s
+2025-12-23 21:22:52,238 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.15s
+2025-12-23 21:22:52,401 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.15s
+2025-12-23 21:22:52,536 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.13s
+2025-12-23 21:22:52,673 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.13s
+2025-12-23 21:22:52,773 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.09s
+2025-12-23 21:22:52,934 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.15s
+2025-12-23 21:22:53,048 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.11s
+2025-12-23 21:22:53,161 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.10s
+2025-12-23 21:22:53,301 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.13s
+2025-12-23 21:22:53,440 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.13s
+2025-12-23 21:22:53,547 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.10s
+2025-12-23 21:22:53,683 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.13s
+2025-12-23 21:22:54,493 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.80s
+2025-12-23 21:22:54,596 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.09s
+2025-12-23 21:22:54,743 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.14s
+2025-12-23 21:22:54,850 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.10s
+2025-12-23 21:22:55,018 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.16s
+2025-12-23 21:22:55,185 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.16s
+2025-12-23 21:22:55,286 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.09s
+2025-12-23 21:22:55,399 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.10s
+2025-12-23 21:22:55,499 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.09s
+2025-12-23 21:22:55,667 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.16s
+2025-12-23 21:22:55,812 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.14s
+2025-12-23 21:22:55,922 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.10s
+2025-12-23 21:22:56,042 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.11s
+2025-12-23 21:22:56,147 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.10s
+2025-12-23 21:22:56,251 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.10s
+2025-12-23 21:22:56,370 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.11s
+2025-12-23 21:22:56,492 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.11s
+2025-12-23 21:22:56,586 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.09s
+2025-12-23 21:22:56,688 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.09s
+2025-12-23 21:22:56,794 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.10s
+2025-12-23 21:22:56,924 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.12s
+2025-12-23 21:22:57,067 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.13s
+2025-12-23 21:22:57,158 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.08s
+2025-12-23 21:22:57,326 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.16s
+2025-12-23 21:22:57,470 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.14s
+2025-12-23 21:22:57,693 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.22s
+2025-12-23 21:22:57,791 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.09s
+2025-12-23 21:22:57,896 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.10s
+2025-12-23 21:22:58,002 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.10s
+2025-12-23 21:22:58,170 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.16s
+2025-12-23 21:22:58,267 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.09s
+2025-12-23 21:22:58,356 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.08s
+2025-12-23 21:22:58,464 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.10s
+2025-12-23 21:22:58,644 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.17s
+2025-12-23 21:22:58,761 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.11s
+2025-12-23 21:22:58,925 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.16s
+2025-12-23 21:22:59,043 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.11s
+2025-12-23 21:22:59,144 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.10s
+2025-12-23 21:22:59,246 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.09s
+2025-12-23 21:22:59,354 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.10s
+2025-12-23 21:22:59,448 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.09s
+2025-12-23 21:22:59,594 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.14s
+2025-12-23 21:22:59,699 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.10s
+2025-12-23 21:22:59,825 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.12s
+2025-12-23 21:22:59,919 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.09s
+2025-12-23 21:23:00,056 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.13s
+2025-12-23 21:23:00,205 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.14s
+2025-12-23 21:23:00,312 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.10s
+2025-12-23 21:23:00,433 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.11s
+2025-12-23 21:23:00,546 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.10s
+2025-12-23 21:23:00,637 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.08s
+2025-12-23 21:23:00,735 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.09s
+2025-12-23 21:23:00,895 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.15s
+2025-12-23 21:23:00,993 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.09s
+2025-12-23 21:23:01,121 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.12s
+2025-12-23 21:23:01,236 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.11s
+2025-12-23 21:23:01,336 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.09s
+2025-12-23 21:23:01,445 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.10s
+2025-12-23 21:23:01,544 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.09s
+2025-12-23 21:23:01,652 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.10s
+2025-12-23 21:23:01,783 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.13s
+2025-12-23 21:23:01,916 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.13s
+2025-12-23 21:23:02,020 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.10s
+2025-12-23 21:23:02,122 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.09s
+2025-12-23 21:23:02,214 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.08s
+2025-12-23 21:23:02,335 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.11s
+2025-12-23 21:23:02,445 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.10s
+2025-12-23 21:23:02,548 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.10s
+2025-12-23 21:23:02,658 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.10s
+2025-12-23 21:23:02,771 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.10s
+2025-12-23 21:23:02,949 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.17s
+2025-12-23 21:23:03,057 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.10s
+2025-12-23 21:23:03,162 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.10s
+2025-12-23 21:23:03,295 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.13s
+2025-12-23 21:25:20,655 - rag_service - INFO - Generated embeddings for 1 input(s) in 1.16s
+2025-12-23 21:26:50,456 - rag_service - INFO - Generated embeddings for 1 input(s) in 0.97s
+2025-12-24 12:29:41,638 - rag_service - INFO - Generated embeddings for 1 input(s) in 3.06s
